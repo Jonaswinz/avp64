@@ -31,9 +31,29 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
+    ${src}/fuzzing/test_server.cpp
+    ${src}/fuzzing/probe.cpp
+    ${src}/fuzzing/can_injector.cpp
+    ${src}/fuzzing/test.grpc.pb.cc
+    ${src}/fuzzing/test.pb.cc
 )
 
 add_library(avp64 STATIC ${sources})
+
+#Fuzzing
+## If GLIBCXX_3.4.29 error: export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/net/sw/gcc/gcc-11.4.1/lib64 (or similar, depends on system path)
+## And run build command after this in command line
+set(gRPC_BUILD_GRPC_CSHARP_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPC_NODE_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPC_PHP_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPC_PYTHON_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPC_RUBY_PLUGIN OFF CACHE BOOL "")
+set(gRPC_BUILD_GRPCPP_OTEL_PLUGIN OFF CACHE BOOL "")
+set(ABSL_ENABLE_INSTALL ON)
+find_github_repo(grpc "grpc/grpc" "v1.62.0")
+target_link_libraries(avp64 PUBLIC grpc++_reflection grpc++ protobuf::libprotobuf)
+
 
 target_compile_options(avp64 PRIVATE ${MWR_COMPILER_WARN_FLAGS})
 target_include_directories(avp64 PUBLIC ${inc})

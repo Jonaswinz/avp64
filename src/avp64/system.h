@@ -12,6 +12,7 @@
 
 #include "vcml.h"
 #include "avp64.h"
+#include "fuzzing/test_server.h"
 
 namespace avp64 {
 
@@ -110,7 +111,6 @@ public:
     virtual void end_of_elaboration() override;
 
     const char* version() const override;
-    virtual const char* kind() const override { return "avp64::system"; }
 
 private:
     vcml::generic::clock m_clock_cpu;
@@ -146,6 +146,11 @@ private:
     cpu m_cpu;
 
     void construct_system_arm64();
+
+    fuzzing::Can_injector can_injector;
+    fuzzing::MMIO_access mmio_access;
+    fuzzing::probe m_probe;
+    fuzzing::test_gRPCserver grpcserver;
 };
 
 } // namespace avp64

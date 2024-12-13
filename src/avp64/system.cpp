@@ -49,7 +49,13 @@ void system::construct_system_arm64() {
     gpio_bind(m_reset, "rst", m_can, "rst");
     gpio_bind(m_reset, "rst", m_can_msgram, "rst");
 
-    tlm_bind(m_bus, m_cpu, "bus");
+    //tlm_bind(m_bus, m_cpu, "bus");
+
+    //Fuzzer:
+    tlm_bind(m_cpu,"bus",m_probe, "probe_in");
+    tlm_bind(m_bus, m_probe, "probe_out");
+
+
     tlm_bind(m_bus, m_ram, "in", addr_ram);
     tlm_bind(m_bus, m_uart0, "in", addr_uart0);
     tlm_bind(m_bus, m_uart1, "in", addr_uart1);
@@ -94,6 +100,9 @@ void system::construct_system_arm64() {
     // Connect CAN device to CAN controller
     m_canbus.connect(m_can);
     m_canbus.connect(m_canbridge);
+
+    //Fuzzer:
+    m_canbus.connect(can_injector);
 
     // IRQs
     gpio_bind(m_uart0, "irq", m_cpu, "spi", irq_uart0);
@@ -160,11 +169,20 @@ system::system(const sc_core::sc_module_name& nm):
     m_can_msgram("can_msgram", addr_can_msgram.get().length()),
     m_can("can", addr_can_msgram.get()),
     m_canbridge("canbridge"),
-    m_cpu("cpu") {
-    construct_system_arm64();
-}
+    m_cpu("cpu"),
+    can_injector("can_injector"),
+    mmio_access(),
+    m_probe("probe", this->mmio_access),
+    grpcserver("grpc", this->mmio_access, this->can_injector) {
+        construct_system_arm64();
+
+        //Fuzzer:
+        m_probe.notify_mmio_access = std::bind(&fuzzing::test_gRPCserver::on_mmio_access, &grpcserver, std::placeholders::_1);
+        
+    }
 
 int system::run() {
+
     double simstart = mwr::timestamp();
     int result = vcml::system::run();
     double realtime = mwr::timestamp() - simstart;
@@ -179,6 +197,9 @@ int system::run() {
     vcml::log_info("  sim speed      : %.1f MIPS", mips);
     vcml::log_info("  realtime ratio : %.2f / 1s",
                    realtime == 0.0 ? 0.0 : realtime / duration);
+
+    //Fuzzer:
+    grpcserver.notify_vp_finished();
 
     return result;
 }
