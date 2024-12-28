@@ -20,7 +20,8 @@ void probe::b_transport(vcml::tlm_target_socket& origin, vcml::tlm_generic_paylo
         VCML_ERROR("invalid in-bound transaction response status");
 
     // If we're tracking the accesses we're not forwarding the payload to the system bus
-    if(mmio_access_ptr->track_mmio_access)
+    // Ignoring simdev location of 0x10008000
+    if(mmio_access_ptr->track_mmio_access && tx.get_address() != 0x10008000)
     {
         notify_mmio_access(tx); // this calls test_gRPCserver::on_mmio_access()
 

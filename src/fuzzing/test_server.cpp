@@ -169,7 +169,7 @@ void test_gRPCserver::notify_breakpoint_hit(const breakpoint& bp)
     if(it != brkpoint.end()){
         int str_eq = brkpoint[it - brkpoint.begin()].name.compare("exit");
         if(!str_eq)
-            ret_value = read_reg_value("r0");
+            ret_value = read_reg_value("x0");
     }
     
     remove_breakpoint(bp.address(), it-brkpoint.begin());
@@ -340,8 +340,8 @@ grpc::Status test_gRPCserver::set_breakpoint(__attribute__((unused)) ServerConte
                     return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to retrieve the symbol");
 
                 if(sym_addr){
-                    if(target->insert_breakpoint(sym_addr-1, this)){ 
-                        brkpoint.push_back({sym_ptr, sym_name, sym_addr-1});
+                    if(target->insert_breakpoint(sym_addr, this)){ 
+                        brkpoint.push_back({sym_ptr, sym_name, sym_addr});
                         return grpc::Status::OK;
                     } else
                         GRPC_SERVER_ERROR("failed to insert the breakpoint");
