@@ -173,12 +173,11 @@ system::system(const sc_core::sc_module_name& nm):
     can_injector("can_injector"),
     mmio_access(),
     m_probe("probe", this->mmio_access),
-    grpcserver("grpc", this->mmio_access, this->can_injector) {
+    testReceiver("grpc", this->mmio_access, this->can_injector) {
         construct_system_arm64();
 
         //Fuzzer:
-        m_probe.notify_mmio_access = std::bind(&fuzzing::test_gRPCserver::on_mmio_access, &grpcserver, std::placeholders::_1);
-        
+        m_probe.notify_mmio_access = std::bind(&fuzzing::TestReceiver::on_mmio_access, &testReceiver, std::placeholders::_1);
     }
 
 int system::run() {
@@ -199,7 +198,7 @@ int system::run() {
                    realtime == 0.0 ? 0.0 : realtime / duration);
 
     //Fuzzer:
-    grpcserver.notify_vp_finished();
+    testReceiver.notify_vp_finished();
 
     return result;
 }

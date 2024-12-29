@@ -12,7 +12,7 @@
 
 #include "vcml.h"
 #include "avp64.h"
-#include "fuzzing/test_server.h"
+#include "fuzzing/test_receiver.h"
 
 namespace avp64 {
 
@@ -150,7 +150,7 @@ private:
     fuzzing::Can_injector can_injector;
     fuzzing::MMIO_access mmio_access;
     fuzzing::probe m_probe;
-    fuzzing::test_gRPCserver grpcserver;
+    fuzzing::TestReceiver testReceiver;
 };
 
 } // namespace avp64
