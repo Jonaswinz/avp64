@@ -99,7 +99,7 @@ can_injector_ptr(&can_injector)
 
                     std::string code_coverage = handleGetCodeCoverage();
                     size_t sendIndex = 0;
-                    size_t fullLength = (size_t)code_coverage.size()+1;
+                    size_t fullLength = (size_t)code_coverage.size();
                     
                     //Sending head
                     Response headResponse = Response();
@@ -109,7 +109,7 @@ can_injector_ptr(&can_injector)
 
                     //Sending code coverage in chunks
                     while(sendIndex < fullLength){
-                        size_t chunkLength = std::min((size_t)code_coverage.size()+1-sendIndex,(size_t)RESPONSE_LENGTH);
+                        size_t chunkLength = std::min((size_t)code_coverage.size()-sendIndex,(size_t)RESPONSE_LENGTH);
                         mq_send(mqt_responses, code_coverage.c_str()+sendIndex, chunkLength, 0);
                         sendIndex += chunkLength;
                     }
@@ -128,7 +128,7 @@ can_injector_ptr(&can_injector)
                 
 
             } else {
-                LOG_ERROR("Error receiving request data: %s", strerror(errno));
+                LOG_ERROR("Error receiving request data: %s (bytes_read: %d)", strerror(errno), (int)bytes_read);
             }
         }
     }
@@ -198,6 +198,13 @@ can_injector_ptr(&can_injector)
                 break;
             }
 
+            case RESET_CODE_COVERAGE:
+            {
+                response->data[0] = handleResetCodeCoverage();
+                response->dataLength = 1;
+                break;
+            }
+
             case REMOVE_CODE_COVERAGE:
             {
                 response->data[0] = handleDisableCodeCoverage();
@@ -206,9 +213,45 @@ can_injector_ptr(&can_injector)
             }
 
             case GET_EXIT_STATUS:
-            {
+            {   
                 response->data[0] = handleGetExitStatus();
                 response->dataLength = 1;
+                break;
+            }
+
+            case DO_RUN:
+            {
+
+                // Data:
+                // Length start breakpoint +
+                // Start breakpoint name +
+                // Length end breakpoint +
+                // End breakpoint name +
+                // Read data length
+                // Read data
+
+                int start_breakpoint_length = request->data[0];
+                string start_breakpoint(&request->data[1], start_breakpoint_length);
+
+                int end_breakpoint_length = request->data[start_breakpoint_length+1];
+                string end_breakpoint(&request->data[start_breakpoint_length+2], end_breakpoint_length);
+
+                int read_data_length = request->data[start_breakpoint_length+end_breakpoint_length+2];
+
+                response->data[0] = handleDoRun(start_breakpoint, end_breakpoint, &request->data[start_breakpoint_length+end_breakpoint_length+3], read_data_length);
+                response->dataLength = 1;
+                break;
+            }
+
+            case WRITE_CODE_COVERAGE:
+            {
+                int shm_id = ((int)(unsigned char)request->data[0]) | ((int)(unsigned char)request->data[1] << 8) | ((int)(unsigned char)request->data[2] << 16) | ((int)(unsigned char)request->data[3] << 24);
+
+                LOG_INFO("%02X, %02X, %02X, %02X", request->data[0], request->data[1], request->data[2], request->data[3]);
+
+                response->data[0] = handleWriteCodeCoverage(shm_id);
+                response->dataLength = 1;
+
                 break;
             }
 
@@ -339,6 +382,12 @@ can_injector_ptr(&can_injector)
         return STATUS_OK;
     }
 
+    TestReceiver::Status TestReceiver::handleResetCodeCoverage()
+    {
+        memset(bb_array, 0, MAP_SIZE*sizeof(mwr::u8));
+        return STATUS_OK;
+    }
+
     TestReceiver::Status TestReceiver::handleDisableCodeCoverage()
     {
         for (auto* target : target::all())
@@ -391,6 +440,67 @@ can_injector_ptr(&can_injector)
     {   
         LOG_INFO("Getting return code of %d.", ret_value);
         return ret_value;
+    }
+
+    TestReceiver::Status TestReceiver::handleDoRun(std::string start_breakpoint, std::string end_breakpoint, char* MMIO_data, size_t data_length)
+    {   
+        LOG_INFO("Start breakpoint %s, end %s, data length %d", start_breakpoint.c_str(), end_breakpoint.c_str(), (int)data_length);
+        
+        //LOG_INFO("Setting MMIO data");
+        //handleSetMMIOValue(data, data_length);
+
+        LOG_INFO("Setting end breakpoint.");
+        handleSetBreakpoint(end_breakpoint, 0);
+
+        size_t MMIO_data_index = 0;
+
+        Status lastStatus = handleContinue();
+
+        while(true){
+
+            if(lastStatus == VP_END){
+                LOG_INFO("Run loop: VP_END.");
+                break;
+            }else if(lastStatus == MMIO_READ){
+                LOG_INFO("Run loop: MMIO_READ.");
+
+                if(MMIO_data_index < data_length+1){
+                    
+                    LOG_INFO("Run loop: Setting MMIO value %c", MMIO_data[MMIO_data_index]);
+
+                    lastStatus = handleSetMMIOValue(&MMIO_data[MMIO_data_index], 1);
+                    MMIO_data_index ++;
+
+                }else{
+                    LOG_INFO("Run loop: ERROR! More data requested!");
+                    lastStatus = handleSetMMIOValue(0, 1);
+                }
+
+            }else if(lastStatus == BREAKPOINT_HIT){
+                LOG_INFO("Run loop: Breakpoint hit.");
+                break;
+            }else{
+                LOG_INFO("Run loop: Other");
+                lastStatus = handleContinue();
+            }
+        }
+
+        //TODO hangle: VP_END
+
+        LOG_INFO("Setting start breakpoint.");
+        handleSetBreakpoint(start_breakpoint, 0);
+
+        LOG_INFO("Continuing until start breakpoint.");
+
+        //TODO: VP_END !?
+        while(true){
+            lastStatus = handleContinue();
+            if(lastStatus == BREAKPOINT_HIT){
+                break;
+            }
+        }
+
+        return STATUS_OK;
     }
 
     void TestReceiver::notify_breakpoint_hit(const breakpoint& bp){
@@ -517,6 +627,29 @@ can_injector_ptr(&can_injector)
         mmio_access_ptr->read_data.ready = true;
         lk.unlock();
         mmio_access_ptr->mmio_data_cv.notify_one();
+
+        return STATUS_OK;
+    }
+
+    TestReceiver::Status TestReceiver::handleWriteCodeCoverage(int shm_id)
+    {
+        LOG_INFO("Writing Code Coverage to %d.", shm_id);
+
+        // Attach the shared memory segment
+        char* shm_addr = static_cast<char*>(shmat(shm_id, nullptr, 0));
+        if (shm_addr == reinterpret_cast<char*>(-1)) {
+            LOG_ERROR("Failed to attach shared memory: %s", strerror(errno));
+            return ERROR;
+        }
+
+        // Write the data to the shared memory
+        std::memcpy(shm_addr, bb_array, MAP_SIZE*sizeof(mwr::u8));
+
+        // Detach the shared memory
+        if (shmdt(shm_addr) == -1) {
+            LOG_ERROR("Failed to detach shared memory: %s", strerror(errno));
+            return ERROR;
+        }
 
         return STATUS_OK;
     }

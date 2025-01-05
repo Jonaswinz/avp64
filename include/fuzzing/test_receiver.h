@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <mqueue.h>
 #include <thread>
+#include <sys/types.h>
+#include <sys/shm.h>
 
 #include "probe.h"
 #include "can_injector.h"
@@ -34,7 +36,7 @@ namespace fuzzing{
         public:
 
             enum Command{
-                CONTINUE, KILL, SET_BREAKPOINT, REMOVE_BREAKPOINT, SET_MMIO_TRACKING, DISABLE_MMIO_TRACKING, SET_MMIO_VALUE, SET_CODE_COVERAGE, REMOVE_CODE_COVERAGE, GET_CODE_COVERAGE, GET_EXIT_STATUS
+                CONTINUE, KILL, SET_BREAKPOINT, REMOVE_BREAKPOINT, SET_MMIO_TRACKING, DISABLE_MMIO_TRACKING, SET_MMIO_VALUE, SET_CODE_COVERAGE, REMOVE_CODE_COVERAGE, GET_CODE_COVERAGE, GET_EXIT_STATUS, RESET_CODE_COVERAGE, DO_RUN, WRITE_CODE_COVERAGE
             };
 
             enum Status {
@@ -101,11 +103,17 @@ namespace fuzzing{
 
             Status handleSetCodeCoverage();
 
+            Status handleResetCodeCoverage();
+
             Status handleDisableCodeCoverage();
 
             std::string handleGetCodeCoverage();
 
             char handleGetExitStatus();
+
+            Status handleDoRun(std::string start_breakpoint, std::string end_breakpoint, char* data, size_t data_length);
+
+            Status handleWriteCodeCoverage(int shm_id);
 
             std::thread interface_thread;
 
@@ -132,7 +140,7 @@ namespace fuzzing{
             char buffer[REQUEST_LENGTH]; // Buffer should match mq_msgsize
             ssize_t bytes_read;
 
-    };
+                };
 
 };
 
