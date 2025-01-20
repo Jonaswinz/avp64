@@ -517,7 +517,7 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
         load_symbols();
 
     //m_ocx_handle = dlopen("libocx-qemu-arm.so", RTLD_LAZY);
-    m_ocx_handle = dlopen("/scratch/winzer/jw/avp64-mq/build/debug/lib/libocx-qemu-arm.so", RTLD_LAZY);
+    m_ocx_handle = dlopen("libocx-qemu-arm.so", RTLD_LAZY);
     VCML_ERROR_ON(!m_ocx_handle, "Could not load libocx-qemu-arm.so: %s",
                   dlerror());
 

@@ -473,7 +473,8 @@ can_injector_ptr(&can_injector)
 
                 }else{
                     LOG_INFO("Run loop: ERROR! More data requested!");
-                    lastStatus = handleSetMMIOValue(0, 1);
+                    char zero = 0;
+                    lastStatus = handleSetMMIOValue(&zero, 1);
                 }
 
             }else if(lastStatus == BREAKPOINT_HIT){
