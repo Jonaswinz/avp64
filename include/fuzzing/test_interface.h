@@ -3,6 +3,7 @@
 
 #include <mqueue.h>
 #include <string>
+#include <algorithm>
 
 #include "vcml/core/types.h"
 #include "vcml/debugging/target.h"
@@ -27,14 +28,12 @@ namespace fuzzing{
 
             struct request{
                 command cmd;
-                char data[REQUEST_LENGTH-1];
+                char* data = nullptr;
                 size_t data_length = 0;
             };
 
-            //TODO add more_data field for longer data!
-
             struct response{
-                char data[RESPONSE_LENGTH];
+                char* data = nullptr;
                 size_t data_length = 0;
             };
 

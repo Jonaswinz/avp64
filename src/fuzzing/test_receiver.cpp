@@ -17,6 +17,9 @@ namespace fuzzing{
         sem_destroy(&m_empty_slots);
         sem_destroy(&m_full_slots);
 
+        if(m_current_req.data != nullptr) free(m_current_req.data);
+        if(m_current_res.data != nullptr) free(m_current_res.data);
+
         delete m_interface;
     }
 
@@ -47,20 +50,25 @@ namespace fuzzing{
 
             if(m_interface->receive_request()){
 
-                test_interface::request req = m_interface->get_request();
-                test_interface::response res;
+                m_current_req = m_interface->get_request();
+                m_current_res = mq_test_interface::response();
 
-                LOG_INFO("Successfully received request with command: %d", (uint8_t)req.cmd);
+                LOG_INFO("Successfully received request with command: %d", (uint8_t)m_current_req.cmd);
 
                 //Handling request
-                handle_request(&req, &res);
+                handle_request(&m_current_req, &m_current_res);
 
-                if(m_interface->send_response(res)){
-                    LOG_INFO("Successfully sent response for command: %d", (uint8_t)req.cmd);
+                if(m_interface->send_response(m_current_res)){
+                    LOG_INFO("Successfully sent response for command: %d", (uint8_t)m_current_req.cmd);
                 }else{
-                    LOG_ERROR("Could not send response for command: %d", (uint8_t)req.cmd);
+                    LOG_ERROR("Could not send response for command: %d", (uint8_t)m_current_req.cmd);
                 }
 
+                //Clearing response data. Request data is cleared by m_interface.
+                if(m_current_res.data != nullptr){
+                    free(m_current_res.data);
+                    m_current_res.data = nullptr;
+                }
             }
         }
     }
@@ -71,6 +79,7 @@ namespace fuzzing{
 
             case test_interface::CONTINUE:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_continue();
                 res->data_length = 1;
                 break;
@@ -78,6 +87,7 @@ namespace fuzzing{
 
             case test_interface::KILL:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_kill();
                 res->data_length = 1;
                 break;
@@ -88,6 +98,7 @@ namespace fuzzing{
                 uint8_t offset = req->data[0];
                 string symbol_name(req->data + 1, req->data_length-1);
 
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_set_breakpoint(symbol_name, offset);
                 res->data_length = 1;
                 break;
@@ -97,6 +108,7 @@ namespace fuzzing{
             {
                 string symbol_name(req->data, req->data_length);
 
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_remove_breakpoint(symbol_name);
                 res->data_length = 1;
                 break;
@@ -104,6 +116,7 @@ namespace fuzzing{
 
             case test_interface::SET_MMIO_TRACKING:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_set_mmio_tracking();
                 res->data_length = 1;
                 break;
@@ -111,6 +124,7 @@ namespace fuzzing{
 
             case test_interface::DISABLE_MMIO_TRACKING:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_disable_mmio_tracking();
                 res->data_length = 1;
                 break;
@@ -118,6 +132,7 @@ namespace fuzzing{
 
             case test_interface::SET_MMIO_VALUE:
             {   
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_set_mmio_value(&req->data[1], req->data[0]);
                 res->data_length = 1;
                 break;
@@ -125,6 +140,7 @@ namespace fuzzing{
 
             case test_interface::SET_CODE_COVERAGE:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_set_code_coverage();
                 res->data_length = 1;
                 break;
@@ -132,6 +148,7 @@ namespace fuzzing{
 
             case test_interface::RESET_CODE_COVERAGE:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_reset_code_coverage();
                 res->data_length = 1;
                 break;
@@ -139,13 +156,25 @@ namespace fuzzing{
 
             case test_interface::REMOVE_CODE_COVERAGE:
             {
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_disable_code_coverage();
                 res->data_length = 1;
                 break;
             }
 
+            case test_interface::GET_CODE_COVERAGE:
+            {
+                string coverage = handle_get_code_coverage();
+
+                res->data = (char*)malloc(coverage.size());
+                memcpy(res->data, coverage.c_str(), coverage.size());
+                res->data_length = coverage.size();
+                break;
+            }
+
             case test_interface::GET_EXIT_STATUS:
             {   
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_get_exit_status();
                 res->data_length = 1;
                 break;
@@ -171,6 +200,7 @@ namespace fuzzing{
 
                 unsigned int offset = ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+6]) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+7] << 8) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+8] << 16) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+9] << 24);
 
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_do_run(start_breakpoint, end_breakpoint, shm_id, offset);
                 res->data_length = 1;
                 break;
@@ -181,6 +211,7 @@ namespace fuzzing{
                 int shm_id = ((int)(unsigned char)req->data[0]) | ((int)(unsigned char)req->data[1] << 8) | ((int)(unsigned char)req->data[2] << 16) | ((int)(unsigned char)req->data[3] << 24);
                 unsigned int offset = ((int)(unsigned char)req->data[4]) | ((int)(unsigned char)req->data[5] << 8) | ((int)(unsigned char)req->data[6] << 16) | ((int)(unsigned char)req->data[7] << 24);
 
+                res->data = (char*)malloc(1);
                 res->data[0] = handle_write_code_coverage(shm_id, offset);
                 res->data_length = 1;
 

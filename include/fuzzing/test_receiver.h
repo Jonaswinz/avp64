@@ -123,6 +123,8 @@ namespace fuzzing{
 
             test_interface* m_interface;
 
+            test_interface::request m_current_req;
+            test_interface::response m_current_res;
     };
 
 };

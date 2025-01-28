@@ -3,6 +3,7 @@
 namespace fuzzing{
 
     mq_test_interface::mq_test_interface(){
+
         m_attr.mq_flags = 0;
         m_attr.mq_maxmsg = 10;
         m_attr.mq_msgsize = REQUEST_LENGTH;
@@ -37,9 +38,20 @@ namespace fuzzing{
 
     bool mq_test_interface::send_response(test_interface::response &req){
 
-        if(mq_send(m_mqt_responses, req.data, req.data_length, 0) == -1){
-            LOG_ERROR("Error sending response data: %s", strerror(errno));
-            return false;
+        size_t sent_length = 0;
+
+        // Send the response in multiple messages if the message is longer than RESPONSE_LENGTH
+        while(sent_length < req.data_length){
+
+            // Send the rest data or maximum RESPONSE_LENGTH much.
+            size_t next_chunk = std::min(req.data_length - sent_length, (size_t)RESPONSE_LENGTH);
+
+            if(mq_send(m_mqt_responses, req.data+sent_length, next_chunk, 0) == -1){
+                LOG_ERROR("Error sending response data: %s", strerror(errno));
+                return false;
+            }
+
+            sent_length += next_chunk;
         }
         
         return true;
@@ -56,11 +68,17 @@ namespace fuzzing{
             return false;
         }
 
-        m_current_req = request();
+        // Clear old data if existed.
+        if(m_current_req.data != nullptr){
+            free(m_current_req.data);
+            m_current_req.data = nullptr;
+        }
 
+        m_current_req = request();
+        m_current_req.data = (char*)malloc(bytes_read-1);
         m_current_req.data_length = bytes_read;
         m_current_req.cmd = (test_interface::command)m_buffer[0];
-        if(bytes_read > 1) std::memcpy(&(m_current_req.data), m_buffer+1, bytes_read-1);
+        if(bytes_read > 1) std::memcpy(m_current_req.data, m_buffer+1, bytes_read-1);
 
         return true;
     }
