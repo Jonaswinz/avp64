@@ -11,5 +11,6 @@
 
 extern "C" int sc_main(int argc, char** argv) {
     avp64::system system("system");
+    system.parse_args(argc, argv);
     return system.run();
 }

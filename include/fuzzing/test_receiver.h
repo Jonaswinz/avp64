@@ -1,9 +1,6 @@
 #ifndef TestReceiver_h
 #define TestReceiver_h
 
-#define LOG_INFO(fmt, ...) vcml::log_info("FUZZ_INTERFACE: " fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) vcml::log_error("FUZZ_INTERFACE: " fmt, ##__VA_ARGS__)
-
 #include <semaphore.h>
 #include "vcml/debugging/suspender.h"
 #include "vcml/debugging/subscriber.h"
@@ -19,54 +16,42 @@
 
 #include "probe.h"
 #include "can_injector.h"
+#include "test_interface.h"
 
 using namespace vcml::debugging;
 using std::string;
 
-#define REQUEST_LENGTH 256
-#define RESPONSE_LENGTH 256
+#define LOG_INFO(fmt, ...) vcml::log_info("TEST_INTERFACE: " fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) vcml::log_error("TEST_INTERFACE: " fmt, ##__VA_ARGS__)
 
 #define MAP_SIZE_POW2 16
 #define MAP_SIZE (1 << MAP_SIZE_POW2)
 
 namespace fuzzing{
 
-    class TestReceiver final: public suspender, public subscriber{
+    class test_receiver final: public suspender, public subscriber{
 
         public:
 
-            enum Command{
-                CONTINUE, KILL, SET_BREAKPOINT, REMOVE_BREAKPOINT, SET_MMIO_TRACKING, DISABLE_MMIO_TRACKING, SET_MMIO_VALUE, SET_CODE_COVERAGE, REMOVE_CODE_COVERAGE, GET_CODE_COVERAGE, GET_EXIT_STATUS, RESET_CODE_COVERAGE, DO_RUN, WRITE_CODE_COVERAGE
-            };
-
-            enum Status {
+            enum status {
                 STATUS_OK, MMIO_READ, MMIO_WRITE, VP_END, BREAKPOINT_HIT, ERROR=-1
             };
-            
-            struct Request{
-                Command command;
-                char data[REQUEST_LENGTH-1];
-                size_t dataLength = 0;
-            };
 
-            struct Response{
-                char data[RESPONSE_LENGTH];
-                size_t dataLength = 0;
-            };
-
-            struct Breakpoint{
+            struct breakpoint{
                 const symbol* ptr;
                 string name;
                 mwr::u64 addr;
             };
 
-            TestReceiver(const string& name, MMIO_access& mmio_access, Can_injector& can_injector);
+            test_receiver(const string& name, MMIO_access& mmio_access, Can_injector& can_injector);
 
-            ~TestReceiver();
+            void parse_args(int argc, const char* const* argv);
+
+            ~test_receiver();
 
             void run();
 
-            void notify_breakpoint_hit(const breakpoint& bp) override;
+            void notify_breakpoint_hit(const vcml::debugging::breakpoint& bp) override;
 
             void notify_basic_block(target& tgt, mwr::u64 pc, size_t blksz, size_t icount) override;
 
@@ -74,73 +59,71 @@ namespace fuzzing{
 
             void notify_vp_finished();
 
-            char readRegValue(string reg_name);
+            char read_reg_value(string reg_name);
 
         private:
     
-            void messageReceiver();
+            void receiver();
 
-            void handleCommand(Request* request, Response* response);
+            void handle_request(test_interface::request* req, test_interface::response* res);
 
-            Status handleContinue();
+            status handle_continue();
 
-            Status handleKill();
+            status handle_kill();
 
-            std::vector<Breakpoint>::iterator find_breakpoint(string name);
-            std::vector<Breakpoint>::iterator find_breakpoint(mwr::u64 addr);
+            std::vector<breakpoint>::iterator find_breakpoint(string name);
+            std::vector<breakpoint>::iterator find_breakpoint(mwr::u64 addr);
 
-            Status handleSetBreakpoint(string symbol, int offset);
+            status handle_set_breakpoint(string &symbol, int offset);
 
-            Status handleRemoveBreakpoint(string sym_name);
+            status handle_remove_breakpoint(string &sym_name);
 
-            void removeBreakpoint(mwr::u64 addr, int vector_idx);
+            void remove_breakpoint(mwr::u64 addr, int vector_idx);
 
-            Status handleSetMMIOTracking();
+            status handle_set_mmio_tracking();
 
-            Status handleDisableMMIOTracking();
+            status handle_disable_mmio_tracking();
 
-            Status handleSetMMIOValue(char* value, size_t length);
+            status handle_set_mmio_value(char* value, size_t length);
 
-            Status handleSetCodeCoverage();
+            status handle_set_code_coverage();
 
-            Status handleResetCodeCoverage();
+            status handle_reset_code_coverage();
 
-            Status handleDisableCodeCoverage();
+            status handle_disable_code_coverage();
 
-            std::string handleGetCodeCoverage();
+            string handle_get_code_coverage();
 
-            char handleGetExitStatus();
+            char handle_get_exit_status();
 
-            Status handleDoRun(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
+            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
 
-            Status handleWriteCodeCoverage(int shm_id, unsigned int offset);
+            status handle_write_code_coverage(int shm_id, unsigned int offset);
 
-            std::thread interface_thread;
+            std::thread m_interface_thread;
 
-            MMIO_access* mmio_access_ptr;
-            Can_injector* can_injector_ptr;
+            MMIO_access* m_mmio_access;
+            Can_injector* m_can_injector;
 
-            sem_t fullSlots, emptySlots;
-            std::deque<Status> exitID_buffer;
+            sem_t m_full_slots, m_empty_slots;
+            std::deque<status> m_exit_id_buffer;
 
-            mq_attr attr;
-            mqd_t mqt_requests, mqt_responses;
+            bool m_is_sim_suspended = false;
 
-            bool is_sim_suspended = false;
+            std::vector<breakpoint> m_active_breakpoints;  
 
-            std::vector<Breakpoint> active_breakpoints;  
+            char m_ret_value = 0;
 
-            char ret_value = 0;
+            bool m_kill_server = false;
 
-            bool kill_server = false;
+            mwr::u8 m_bb_array [MAP_SIZE];
+            mwr::u64 m_prev_bb_loc = 0;
 
-            mwr::u8 bb_array [MAP_SIZE];
-            mwr::u64 prev_bb_loc = 0;
+            mwr::option<string> m_communication_option;
 
-            char buffer[REQUEST_LENGTH]; // Buffer should match mq_msgsize
-            ssize_t bytes_read;
+            test_interface* m_interface;
 
-                };
+    };
 
 };
 

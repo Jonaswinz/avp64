@@ -106,6 +106,8 @@ public:
     system(const system&) = delete;
     virtual ~system() = default;
 
+    void parse_args(int argc, const char* const* argv);
+
     int run() override;
 
     virtual void end_of_elaboration() override;
@@ -147,10 +149,10 @@ private:
 
     void construct_system_arm64();
 
-    fuzzing::Can_injector can_injector;
-    fuzzing::MMIO_access mmio_access;
+    fuzzing::Can_injector m_can_injector;
+    fuzzing::MMIO_access m_mmio_access;
     fuzzing::probe m_probe;
-    fuzzing::TestReceiver testReceiver;
+    fuzzing::test_receiver m_test_receiver;
 };
 
 } // namespace avp64

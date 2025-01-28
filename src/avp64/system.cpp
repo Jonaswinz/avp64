@@ -102,7 +102,7 @@ void system::construct_system_arm64() {
     m_canbus.connect(m_canbridge);
 
     //Fuzzer:
-    m_canbus.connect(can_injector);
+    m_canbus.connect(m_can_injector);
 
     // IRQs
     gpio_bind(m_uart0, "irq", m_cpu, "spi", irq_uart0);
@@ -170,17 +170,22 @@ system::system(const sc_core::sc_module_name& nm):
     m_can("can", addr_can_msgram.get()),
     m_canbridge("canbridge"),
     m_cpu("cpu"),
-    can_injector("can_injector"),
-    mmio_access(),
-    m_probe("probe", this->mmio_access),
-    testReceiver("grpc", this->mmio_access, this->can_injector) {
+    m_can_injector("can_injector"),
+    m_mmio_access(),
+    m_probe("probe", this->m_mmio_access),
+    m_test_receiver("grpc", this->m_mmio_access, this->m_can_injector) {
         construct_system_arm64();
 
-        //Fuzzer:
-        m_probe.notify_mmio_access = std::bind(&fuzzing::TestReceiver::on_mmio_access, &testReceiver, std::placeholders::_1);
+        m_probe.notify_mmio_access = std::bind(&fuzzing::test_receiver::on_mmio_access, &m_test_receiver, std::placeholders::_1);
     }
 
+void system::parse_args(int argc, const char* const* argv){
+    m_test_receiver.parse_args(argc, argv);
+}
+
 int system::run() {
+
+    m_test_receiver.run();
 
     double simstart = mwr::timestamp();
     int result = vcml::system::run();
@@ -197,8 +202,7 @@ int system::run() {
     vcml::log_info("  realtime ratio : %.2f / 1s",
                    realtime == 0.0 ? 0.0 : realtime / duration);
 
-    //Fuzzer:
-    testReceiver.notify_vp_finished();
+    m_test_receiver.notify_vp_finished();
 
     return result;
 }
