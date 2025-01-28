@@ -111,9 +111,9 @@ namespace fuzzing{
 
             char handleGetExitStatus();
 
-            Status handleDoRun(std::string start_breakpoint, std::string end_breakpoint, char* data, size_t data_length);
+            Status handleDoRun(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
 
-            Status handleWriteCodeCoverage(int shm_id);
+            Status handleWriteCodeCoverage(int shm_id, unsigned int offset);
 
             std::thread interface_thread;
 

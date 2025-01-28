@@ -65,9 +65,13 @@ can_injector_ptr(&can_injector)
         }
 
         string readySignal = "ready";
-        mq_send(mqt_responses, readySignal.c_str(), readySignal.size(), 0);
+        if(mq_send(mqt_responses, readySignal.c_str(), readySignal.size(), 0) == 0){
+            LOG_INFO("Message queues ready, waiting for requests.");
+        }else{
+            LOG_ERROR("Error sending ready message: %s response message queue.", strerror(errno));  
+        }
 
-        LOG_INFO("Message queues ready, waiting for requests.");
+        
 
         interface_thread = std::thread([this] {
             this->messageReceiver();
@@ -227,8 +231,7 @@ can_injector_ptr(&can_injector)
                 // Start breakpoint name +
                 // Length end breakpoint +
                 // End breakpoint name +
-                // Read data length
-                // Read data
+                // MMIO data shared memory ID
 
                 int start_breakpoint_length = request->data[0];
                 string start_breakpoint(&request->data[1], start_breakpoint_length);
@@ -236,9 +239,11 @@ can_injector_ptr(&can_injector)
                 int end_breakpoint_length = request->data[start_breakpoint_length+1];
                 string end_breakpoint(&request->data[start_breakpoint_length+2], end_breakpoint_length);
 
-                int read_data_length = request->data[start_breakpoint_length+end_breakpoint_length+2];
+                int shm_id = ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+2]) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+3] << 8) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+4] << 16) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+5] << 24);
 
-                response->data[0] = handleDoRun(start_breakpoint, end_breakpoint, &request->data[start_breakpoint_length+end_breakpoint_length+3], read_data_length);
+                unsigned int offset = ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+6]) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+7] << 8) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+8] << 16) | ((int)(unsigned char)request->data[start_breakpoint_length+end_breakpoint_length+9] << 24);
+
+                response->data[0] = handleDoRun(start_breakpoint, end_breakpoint, shm_id, offset);
                 response->dataLength = 1;
                 break;
             }
@@ -246,10 +251,9 @@ can_injector_ptr(&can_injector)
             case WRITE_CODE_COVERAGE:
             {
                 int shm_id = ((int)(unsigned char)request->data[0]) | ((int)(unsigned char)request->data[1] << 8) | ((int)(unsigned char)request->data[2] << 16) | ((int)(unsigned char)request->data[3] << 24);
+                unsigned int offset = ((int)(unsigned char)request->data[4]) | ((int)(unsigned char)request->data[5] << 8) | ((int)(unsigned char)request->data[6] << 16) | ((int)(unsigned char)request->data[7] << 24);
 
-                LOG_INFO("%02X, %02X, %02X, %02X", request->data[0], request->data[1], request->data[2], request->data[3]);
-
-                response->data[0] = handleWriteCodeCoverage(shm_id);
+                response->data[0] = handleWriteCodeCoverage(shm_id, offset);
                 response->dataLength = 1;
 
                 break;
@@ -442,12 +446,37 @@ can_injector_ptr(&can_injector)
         return ret_value;
     }
 
-    TestReceiver::Status TestReceiver::handleDoRun(std::string start_breakpoint, std::string end_breakpoint, char* MMIO_data, size_t data_length)
+    TestReceiver::Status TestReceiver::handleDoRun(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset)
     {   
-        LOG_INFO("Start breakpoint %s, end %s, data length %d", start_breakpoint.c_str(), end_breakpoint.c_str(), (int)data_length);
+        
+        LOG_INFO("Start breakpoint %s, end %s", start_breakpoint.c_str(), end_breakpoint.c_str());
         
         //LOG_INFO("Setting MMIO data");
         //handleSetMMIOValue(data, data_length);
+
+        LOG_INFO("Loading MMIO data from shared memory %d.", shm_id);
+
+        // Attach the shared memory segment to the process's address space
+        // Using shared memory directly for better performance. Copying would be safer, but we want performance here.
+        char* MMIO_data = static_cast<char*>(shmat(shm_id, nullptr, SHM_RDONLY));
+        if (MMIO_data == reinterpret_cast<char*>(-1)) {
+            LOG_ERROR("Failed to attach shared memory segment: %s", strerror(errno));
+            return ERROR;
+        }
+
+        struct shmid_ds shm_info;
+        if (shmctl(shm_id, IPC_STAT, &shm_info) == -1) {
+            LOG_ERROR("Reading length of shared memory failed!");
+            return ERROR;
+        }
+
+        size_t data_length = shm_info.shm_segsz-offset;
+
+        if(MMIO_data[data_length-1] == '\0'){
+            LOG_INFO("Loaded test case: %s.", MMIO_data+offset);
+        }else{
+            LOG_INFO("Could not print test case, because there is not a termination character.");
+        }
 
         LOG_INFO("Setting end breakpoint.");
         handleSetBreakpoint(end_breakpoint, 0);
@@ -466,9 +495,9 @@ can_injector_ptr(&can_injector)
 
                 if(MMIO_data_index < data_length+1){
                     
-                    LOG_INFO("Run loop: Setting MMIO value %c", MMIO_data[MMIO_data_index]);
+                    LOG_INFO("Run loop: Setting MMIO value %c", MMIO_data[offset+MMIO_data_index]);
 
-                    lastStatus = handleSetMMIOValue(&MMIO_data[MMIO_data_index], 1);
+                    lastStatus = handleSetMMIOValue(&MMIO_data[offset+MMIO_data_index], 1);
                     MMIO_data_index ++;
 
                 }else{
@@ -484,6 +513,12 @@ can_injector_ptr(&can_injector)
                 LOG_INFO("Run loop: Other");
                 lastStatus = handleContinue();
             }
+        }
+
+        // Detach the shared memory
+        if (shmdt(MMIO_data) == -1) {
+            LOG_ERROR("Failed to detach shared memory: %s", strerror(errno));
+            // Continue to return the read data even if detaching fails
         }
 
         //TODO hangle: VP_END
@@ -520,15 +555,14 @@ can_injector_ptr(&can_injector)
         // If we run into the exit breakpoint read the register with the result (0 success, 1 fault)
         if(it != active_breakpoints.end()){
             LOG_INFO("Breakpoit %s hit.", it->name.c_str());
-
-            int str_eq = active_breakpoints[it - active_breakpoints.begin()].name.compare("exit");
-            if(!str_eq){
+            
+            if(!it->name.compare("exit")){
                 ret_value = readRegValue("x0");
                 LOG_INFO("Exit return value: %d.", ret_value);
             }
-        }
         
-        removeBreakpoint(bp.address(), it-active_breakpoints.begin());
+            removeBreakpoint(bp.address(), it-active_breakpoints.begin());
+        }
     }
 
     char TestReceiver::readRegValue(string reg_name)
@@ -632,23 +666,34 @@ can_injector_ptr(&can_injector)
         return STATUS_OK;
     }
 
-    TestReceiver::Status TestReceiver::handleWriteCodeCoverage(int shm_id)
+    TestReceiver::Status TestReceiver::handleWriteCodeCoverage(int shm_id, unsigned int offset)
     {
         LOG_INFO("Writing Code Coverage to %d.", shm_id);
 
         // Attach the shared memory segment
         char* shm_addr = static_cast<char*>(shmat(shm_id, nullptr, 0));
         if (shm_addr == reinterpret_cast<char*>(-1)) {
-            LOG_ERROR("Failed to attach shared memory: %s", strerror(errno));
+            LOG_ERROR("Failed to attach code coverage shared memory: %s", strerror(errno));
+            return ERROR;
+        }
+
+        struct shmid_ds shm_info;
+        if (shmctl(shm_id, IPC_STAT, &shm_info) == -1) {
+            LOG_ERROR("Reading length of coverage shared memory failed!");
+            return ERROR;
+        }
+
+        if(MAP_SIZE*sizeof(mwr::u8) > (size_t)shm_info.shm_segsz-offset){
+            LOG_ERROR("Coverage map does not fit into the shared memory!");
             return ERROR;
         }
 
         // Write the data to the shared memory
-        std::memcpy(shm_addr, bb_array, MAP_SIZE*sizeof(mwr::u8));
+        std::memcpy(shm_addr+offset, bb_array, MAP_SIZE*sizeof(mwr::u8));
 
         // Detach the shared memory
         if (shmdt(shm_addr) == -1) {
-            LOG_ERROR("Failed to detach shared memory: %s", strerror(errno));
+            LOG_ERROR("Failed to detach code coverage shared memory: %s", strerror(errno));
             return ERROR;
         }
 
