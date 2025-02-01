@@ -16,10 +16,11 @@ option(AVP64_BUILD_RUNNER "Build avp64 runner" ON)
 set(AVP64_LINTER "" CACHE STRING "Code linter to use")
 
 include(cmake/common.cmake)
-find_github_repo(vcml "machineware-gmbh/vcml")
+set(VCML_TAG "snapshotting" CACHE STRING "Tag of vcml")
+find_github_repo(vcml "jonaswinz/vcml")
 
 set(OCX_QEMU_ARM_BUILD_TESTS OFF CACHE BOOL "disable ocx tests")
-find_github_repo(ocx-qemu-arm "snps-virtualprototyping/ocx-qemu-arm")
+find_github_repo(ocx-qemu-arm "jonaswinz/ocx-qemu-arm")
 
 set(src "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(inc "${CMAKE_CURRENT_SOURCE_DIR}/include")
