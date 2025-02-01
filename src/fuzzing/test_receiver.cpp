@@ -7,7 +7,12 @@ namespace fuzzing{
     test_receiver::test_receiver(const string& name, fuzzing::MMIO_access& mmio_access, Can_injector& can_injector):
         suspender(name),subscriber(),m_mmio_access(&mmio_access),
         m_can_injector(&can_injector),
-        m_communication_option("--test-receiver-communication", "Sets the communication method to the test receiver. 0: Message quque, 2: pipes") {
+        m_enabled_option("--enable-test-receiver", "Enables the test-receiver to automatically run tests inside avp64."),
+        m_communication_option("--test-receiver-interface", "Sets the interfacing method of the test receiver. 0: Message queues, 1: pipes."),
+        m_mq_request_option("--test-receiver-mq-request", "File descriptor of the message queue where requests are read from. Required for interface 0."),
+        m_mq_response_option("--test-receiver-mq-response", "File descriptor of the message queue where responses are send to. Required for interface 0."),
+        m_pipe_request_option("--test-receiver-pipe-request", "File descriptor of the pipe where requests are read from. Required for interface 1."),
+        m_pipe_response_option("--test-receiver-pipe-response", "File descriptor of the pipe where responses are send to. Required for interface 1.") {
 
             sem_init(&m_empty_slots, 0, 0); 
             sem_init(&m_full_slots, 0, 0);
@@ -24,18 +29,75 @@ namespace fuzzing{
     }
 
     void test_receiver::parse_args(int argc, const char* const* argv){
+        m_enabled_option.parse(argc, argv);
         m_communication_option.parse(argc, argv);
+        m_mq_request_option.parse(argc, argv);
+        m_mq_response_option.parse(argc, argv);
+        m_pipe_request_option.parse(argc, argv);
+        m_pipe_response_option.parse(argc, argv);
     }
 
     void test_receiver::run(){
 
+        // Dont start the test receiver if the option --enable-test-receiver is not set.
+        if(!m_enabled_option.has_value() || !m_enabled_option.value()) return;
+
+        LOG_INFO("Test receiver enabled!");
+
         m_is_sim_suspended = true;
         suspend();
 
-        m_interface = new mq_test_interface();
+        test_interface::interface selected_interface = test_interface::MQ;
 
-        LOG_INFO("ASDasdasdasdasdas: %d", m_communication_option.has_value());  
+        if(m_communication_option.has_value()){
+            try{
+                selected_interface = (test_interface::interface)std::stoi(m_communication_option.value());
+            }catch(std::exception &e){
+                LOG_ERROR("Selected interface (--test-receiver-interface) is not valid number.");
+            }
+
+            if(selected_interface >= test_interface::INTERFACE_COUNT){
+               LOG_ERROR("Selected interface (--test-receiver-interface) is invalid. Possible selection 0-%d.", test_interface::INTERFACE_COUNT-1); 
+            }
+
+        }
         
+        if(selected_interface == test_interface::MQ){
+
+            if(!m_mq_request_option.has_value() || !m_mq_response_option.has_value()){
+                LOG_ERROR("In order to use MQ for communication --test-receiver-mq-request and --test-receiver-mq-response must be set!"); 
+                exit(1);
+            }
+
+            //m_interface = new mq_test_interface("/avp64-test-receiver", "/avp64-test-sender");
+            m_interface = new mq_test_interface(m_mq_request_option.value(), m_mq_response_option.value());
+
+            LOG_INFO("Interface MQ selected for communication with fd %s and %s.", m_mq_request_option.value().c_str(), m_mq_response_option.value().c_str());  
+        }else if(selected_interface == test_interface::PIPE){
+
+            if(!m_pipe_request_option.has_value() || !m_pipe_response_option.has_value()){
+                LOG_ERROR("In order to use pipes for communication --test-receiver-pipe-request and --test-receiver-pipe-response must be set!"); 
+                exit(1);
+            }
+
+            int pipe_request = -1;
+            int pipe_response = -1;
+            
+            try{
+                pipe_request = std::stoi(m_pipe_request_option.value());
+                pipe_response = std::stoi(m_pipe_response_option.value());
+            }catch(std::exception &e){
+                LOG_ERROR("specified pipes (--test-receiver-pipe-request or --test-receiver-pipe-response) are not valid numbers.");
+            }
+
+            m_interface = new pipe_test_interface(pipe_request, pipe_response);   
+            LOG_INFO("Interface pipes selected for communication with fd %d and %d.", pipe_request, pipe_response);  
+        }
+
+        if(!m_interface->start()){
+            LOG_ERROR("Error starting communication interface!"); 
+            exit(1);
+        }
         
 
         m_interface_thread = std::thread([this] {
@@ -627,7 +689,7 @@ namespace fuzzing{
 
     test_receiver::status test_receiver::handle_write_code_coverage(int shm_id, unsigned int offset)
     {
-        LOG_INFO("Writing Code Coverage to %d.", shm_id);
+        LOG_INFO("Writing Code Coverage to %d with offset %d.", shm_id, offset);
 
         // Attach the shared memory segment
         char* shm_addr = static_cast<char*>(shmat(shm_id, nullptr, 0));

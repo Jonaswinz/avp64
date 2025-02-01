@@ -2,33 +2,42 @@
 
 namespace fuzzing{
 
-    mq_test_interface::mq_test_interface(){
+    mq_test_interface::mq_test_interface(string mq_request_name, string mq_response_name){
+        m_mq_request_name = new char[mq_request_name.length() + 1];
+        std::strcpy(m_mq_request_name, mq_request_name.c_str());
+        m_mq_response_name = new char[mq_response_name.length() + 1];
+        std::strcpy(m_mq_response_name, mq_response_name.c_str());
+    }
+
+    bool mq_test_interface::start(){
 
         m_attr.mq_flags = 0;
         m_attr.mq_maxmsg = 10;
-        m_attr.mq_msgsize = REQUEST_LENGTH;
+        m_attr.mq_msgsize = MQ_REQUEST_LENGTH;
         m_attr.mq_curmsgs = 0;
 
-        clear_mq("/avp64-test-receiver");
-        clear_mq("/avp64-test-sender");
+        clear_mq(m_mq_request_name);
+        clear_mq(m_mq_response_name);
 
-        if ((m_mqt_requests = mq_open("/avp64-test-receiver", O_RDONLY | O_CREAT, 0660, &m_attr)) == -1) {
-            LOG_ERROR("Error opening request message queue %s.", mq_request_name.c_str());
-            exit(1);
+        if ((m_mqt_requests = mq_open(m_mq_request_name, O_RDONLY | O_CREAT, 0660, &m_attr)) == -1) {
+            LOG_ERROR("Error opening request message queue %s.", m_mq_request_name);
+            return false;
         }
 
-        if ((m_mqt_responses = mq_open("/avp64-test-sender", O_WRONLY | O_CREAT, 0644, &m_attr)) == -1) {
-            LOG_ERROR("Error opening response message queue %s.", mq_response_name.c_str());
-            exit(1);
+        if ((m_mqt_responses = mq_open(m_mq_response_name, O_WRONLY | O_CREAT, 0644, &m_attr)) == -1) {
+            LOG_ERROR("Error opening response message queue %s.", m_mq_response_name);
+            return false;
         }
 
         string ready_signal = "ready";
         if(mq_send(m_mqt_responses, ready_signal.c_str(), ready_signal.size(), 0) == 0){
-            LOG_INFO("Message queues ready, waiting for requests.");
+            LOG_INFO("Communication ready, waiting for requests.");
         }else{
             LOG_ERROR("Error sending ready message: %s.", strerror(errno));  
+            return false;
         }
 
+        return true;
     }
 
     mq_test_interface::~mq_test_interface(){
@@ -36,17 +45,17 @@ namespace fuzzing{
         mq_close(m_mqt_responses);
     }
 
-    bool mq_test_interface::send_response(test_interface::response &req){
+    bool mq_test_interface::send_response(test_interface::response &res){
 
         size_t sent_length = 0;
 
         // Send the response in multiple messages if the message is longer than RESPONSE_LENGTH
-        while(sent_length < req.data_length){
+        while(sent_length < res.data_length){
 
             // Send the rest data or maximum RESPONSE_LENGTH much.
-            size_t next_chunk = std::min(req.data_length - sent_length, (size_t)RESPONSE_LENGTH);
+            size_t next_chunk = std::min(res.data_length - sent_length, (size_t)MQ_RESPONSE_LENGTH);
 
-            if(mq_send(m_mqt_responses, req.data+sent_length, next_chunk, 0) == -1){
+            if(mq_send(m_mqt_responses, res.data+sent_length, next_chunk, 0) == -1){
                 LOG_ERROR("Error sending response data: %s", strerror(errno));
                 return false;
             }
@@ -62,7 +71,7 @@ namespace fuzzing{
         memset(m_buffer, 0, sizeof(m_buffer));
 
         // Receive message
-        size_t bytes_read = mq_receive(m_mqt_requests, m_buffer, REQUEST_LENGTH, NULL);
+        size_t bytes_read = mq_receive(m_mqt_requests, m_buffer, MQ_REQUEST_LENGTH, NULL);
         if (bytes_read < 1) {
             LOG_ERROR("Message was too short for a valid request!");  
             return false;
@@ -110,5 +119,4 @@ namespace fuzzing{
         delete[] buffer;
         mq_close(mqd);
     }
-
 };

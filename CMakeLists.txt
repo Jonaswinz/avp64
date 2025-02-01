@@ -32,7 +32,8 @@ set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
     ${src}/fuzzing/test_receiver.cpp
-    ${src}/fuzzing/test_interface.cpp
+    ${src}/fuzzing/mq_test_interface.cpp
+    ${src}/fuzzing/pipe_test_interface.cpp
     ${src}/fuzzing/probe.cpp
     ${src}/fuzzing/can_injector.cpp
 )

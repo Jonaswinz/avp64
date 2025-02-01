@@ -119,7 +119,12 @@ namespace fuzzing{
             mwr::u8 m_bb_array [MAP_SIZE];
             mwr::u64 m_prev_bb_loc = 0;
 
+            mwr::option<bool> m_enabled_option;
             mwr::option<string> m_communication_option;
+            mwr::option<string> m_mq_request_option;
+            mwr::option<string> m_mq_response_option;
+            mwr::option<string> m_pipe_request_option;
+            mwr::option<string> m_pipe_response_option;
 
             test_interface* m_interface;
 
