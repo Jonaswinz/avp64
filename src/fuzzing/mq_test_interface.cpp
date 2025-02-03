@@ -84,10 +84,12 @@ namespace fuzzing{
         }
 
         m_current_req = request();
-        m_current_req.data = (char*)malloc(bytes_read-1);
-        m_current_req.data_length = bytes_read;
+        m_current_req.data_length = bytes_read-1;
         m_current_req.cmd = (test_interface::command)m_buffer[0];
-        if(bytes_read > 1) std::memcpy(m_current_req.data, m_buffer+1, bytes_read-1);
+        if(bytes_read > 1){
+            m_current_req.data = (char*)malloc(bytes_read-1);
+            std::memcpy(m_current_req.data, m_buffer+1, bytes_read-1);
+        }
 
         return true;
     }

@@ -227,9 +227,16 @@ namespace fuzzing{
             case test_interface::GET_CODE_COVERAGE:
             {
                 string coverage = handle_get_code_coverage();
+                
+                uint32_t length = coverage.size();
 
-                res->data = (char*)malloc(coverage.size());
-                memcpy(res->data, coverage.c_str(), coverage.size());
+                res->data = (char*)malloc(coverage.size()+4);
+                res->data[0] = (char)(length & 0xFF);
+                res->data[1] = (char)((length >> 8) & 0xFF);
+                res->data[2] = (char)((length >> 16) & 0xFF);
+                res->data[3] = (char)((length >> 24) & 0xFF);
+
+                memcpy(res->data+4, coverage.c_str(), coverage.size());
                 res->data_length = coverage.size();
                 break;
             }
