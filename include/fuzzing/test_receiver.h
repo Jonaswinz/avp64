@@ -96,7 +96,9 @@ namespace fuzzing{
 
             char handle_get_exit_status();
 
-            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
+            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length);
+
+            status handle_do_run_shm(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
 
             status handle_write_code_coverage(int shm_id, unsigned int offset);
 

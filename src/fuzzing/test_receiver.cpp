@@ -257,7 +257,37 @@ namespace fuzzing{
                 // Start breakpoint name +
                 // Length end breakpoint +
                 // End breakpoint name +
-                // MMIO data shared memory ID
+                // Length input +
+                // Input +
+
+                //TODO here also unsigned int ?
+                //Termination character ?
+                //Length checking !!!!!!!!!!
+
+                int start_breakpoint_length = req->data[0];
+                string start_breakpoint(&req->data[1], start_breakpoint_length);
+
+                int end_breakpoint_length = req->data[start_breakpoint_length+1];
+                string end_breakpoint(&req->data[start_breakpoint_length+2], end_breakpoint_length);
+
+                unsigned int input_length = ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+2]) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+3] << 8) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+4] << 16) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+5] << 24);
+
+                res->data = (char*)malloc(1);
+                res->data[0] = handle_do_run(start_breakpoint, end_breakpoint, &req->data[start_breakpoint_length+end_breakpoint_length+6], input_length);
+                res->data_length = 1;
+                break;
+            }
+
+            case test_interface::DO_RUN_SHM:
+            {
+
+                // Data:
+                // Length start breakpoint +
+                // Start breakpoint name +
+                // Length end breakpoint +
+                // End breakpoint name +
+                // MMIO data shared memory ID +
+                // SHM offset
 
                 int start_breakpoint_length = req->data[0];
                 string start_breakpoint(&req->data[1], start_breakpoint_length);
@@ -270,7 +300,7 @@ namespace fuzzing{
                 unsigned int offset = ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+6]) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+7] << 8) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+8] << 16) | ((int)(unsigned char)req->data[start_breakpoint_length+end_breakpoint_length+9] << 24);
 
                 res->data = (char*)malloc(1);
-                res->data[0] = handle_do_run(start_breakpoint, end_breakpoint, shm_id, offset);
+                res->data[0] = handle_do_run_shm(start_breakpoint, end_breakpoint, shm_id, offset);
                 res->data_length = 1;
                 break;
             }
@@ -474,34 +504,14 @@ namespace fuzzing{
         return m_ret_value;
     }
 
-    test_receiver::status test_receiver::handle_do_run(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset)
+    test_receiver::status test_receiver::handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length)
     {   
         
         LOG_INFO("Start breakpoint %s, end %s", start_breakpoint.c_str(), end_breakpoint.c_str());
-        
-        //LOG_INFO("Setting MMIO data");
-        //handleSetMMIOValue(data, data_length);
+    
 
-        LOG_INFO("Loading MMIO data from shared memory %d.", shm_id);
-
-        // Attach the shared memory segment to the process's address space
-        // Using shared memory directly for better performance. Copying would be safer, but we want performance here.
-        char* mmio_data = static_cast<char*>(shmat(shm_id, nullptr, SHM_RDONLY));
-        if (mmio_data == reinterpret_cast<char*>(-1)) {
-            LOG_ERROR("Failed to attach shared memory segment: %s", strerror(errno));
-            return ERROR;
-        }
-
-        struct shmid_ds shm_info;
-        if (shmctl(shm_id, IPC_STAT, &shm_info) == -1) {
-            LOG_ERROR("Reading length of shared memory failed!");
-            return ERROR;
-        }
-
-        size_t data_length = shm_info.shm_segsz-offset;
-
-        if(mmio_data[data_length-1] == '\0'){
-            LOG_INFO("Loaded test case: %s.", mmio_data+offset);
+        if(mmio_data[mmio_data_length-1] == '\0'){
+            LOG_INFO("Loaded test case: %s.", mmio_data);
         }else{
             LOG_INFO("Could not print test case, because there is not a termination character.");
         }
@@ -521,11 +531,11 @@ namespace fuzzing{
             }else if(last_status == MMIO_READ){
                 LOG_INFO("Run loop: MMIO_READ.");
 
-                if(mmio_data_index < data_length+1){
+                if(mmio_data_index < mmio_data_length+1){
                     
-                    LOG_INFO("Run loop: Setting MMIO value %c", mmio_data[offset+mmio_data_index]);
+                    LOG_INFO("Run loop: Setting MMIO value %c", mmio_data[mmio_data_index]);
 
-                    last_status = handle_set_mmio_value(&mmio_data[offset+mmio_data_index], 1);
+                    last_status = handle_set_mmio_value(&mmio_data[mmio_data_index], 1);
                     mmio_data_index ++;
 
                 }else{
@@ -541,12 +551,6 @@ namespace fuzzing{
                 LOG_INFO("Run loop: Other");
                 last_status = handle_continue();
             }
-        }
-
-        // Detach the shared memory
-        if (shmdt(mmio_data) == -1) {
-            LOG_ERROR("Failed to detach shared memory: %s", strerror(errno));
-            // Continue to return the read data even if detaching fails
         }
 
         //TODO hangle: VP_END
@@ -565,6 +569,37 @@ namespace fuzzing{
         }
 
         return STATUS_OK;
+    }
+
+    test_receiver::status test_receiver::handle_do_run_shm(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset)
+    {
+        LOG_INFO("Loading MMIO data from shared memory %d.", shm_id);
+
+        // Attach the shared memory segment to the process's address space
+        // Using shared memory directly for better performance. Copying would be safer, but we want performance here.
+        char* mmio_data = static_cast<char*>(shmat(shm_id, nullptr, SHM_RDONLY));
+        if (mmio_data == reinterpret_cast<char*>(-1)) {
+            LOG_ERROR("Failed to attach shared memory segment: %s", strerror(errno));
+            return ERROR;
+        }
+
+        struct shmid_ds shm_info;
+        if (shmctl(shm_id, IPC_STAT, &shm_info) == -1) {
+            LOG_ERROR("Reading length of shared memory failed!");
+            return ERROR;
+        }
+
+        size_t data_length = shm_info.shm_segsz-offset;
+
+        test_receiver::status return_status = handle_do_run(start_breakpoint, end_breakpoint, mmio_data+offset, data_length);
+
+        // Detach the shared memory
+        if (shmdt(mmio_data) == -1) {
+            LOG_ERROR("Failed to detach shared memory: %s", strerror(errno));
+            // Continue to return the read data even if detaching fails
+        }
+
+        return return_status;
     }
 
     void test_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
