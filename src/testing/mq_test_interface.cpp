@@ -1,6 +1,6 @@
-#include "fuzzing/test_interface.h"
+#include "testing/test_interface.h"
 
-namespace fuzzing{
+namespace testing{
 
     mq_test_interface::mq_test_interface(string mq_request_name, string mq_response_name){
         m_mq_request_name = new char[mq_request_name.length() + 1];

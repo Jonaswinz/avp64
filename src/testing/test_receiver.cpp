@@ -1,10 +1,10 @@
-#include "fuzzing/test_receiver.h"
+#include "testing/test_receiver.h"
 
 using namespace vcml::debugging;
 
-namespace fuzzing{
+namespace testing{
 
-    test_receiver::test_receiver(const string& name, fuzzing::MMIO_access& mmio_access, Can_injector& can_injector):
+    test_receiver::test_receiver(const string& name, testing::MMIO_access& mmio_access, Can_injector& can_injector):
         suspender(name),subscriber(),m_mmio_access(&mmio_access),
         m_can_injector(&can_injector),
         m_enabled_option("--enable-test-receiver", "Enables the test-receiver to automatically run tests inside avp64."),

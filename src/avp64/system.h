@@ -12,7 +12,7 @@
 
 #include "vcml.h"
 #include "avp64.h"
-#include "fuzzing/test_receiver.h"
+#include "testing/test_receiver.h"
 
 namespace avp64 {
 
@@ -149,10 +149,10 @@ private:
 
     void construct_system_arm64();
 
-    fuzzing::Can_injector m_can_injector;
-    fuzzing::MMIO_access m_mmio_access;
-    fuzzing::probe m_probe;
-    fuzzing::test_receiver m_test_receiver;
+    testing::Can_injector m_can_injector;
+    testing::MMIO_access m_mmio_access;
+    testing::probe m_probe;
+    testing::test_receiver m_test_receiver;
 };
 
 } // namespace avp64

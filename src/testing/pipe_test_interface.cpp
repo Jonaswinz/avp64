@@ -1,6 +1,6 @@
-#include "fuzzing/test_interface.h"
+#include "testing/test_interface.h"
 
-namespace fuzzing{
+namespace testing{
 
     pipe_test_interface::pipe_test_interface(int fd_requests, int fd_response){
         m_fd_request = fd_requests;

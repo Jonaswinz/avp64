@@ -21,7 +21,7 @@
 using std::string;
 
 //TODO: rename to testing
-namespace fuzzing{
+namespace testing{
 
     class test_interface{
         public: 
@@ -109,6 +109,6 @@ namespace fuzzing{
 
     };
 
-};
+}  //namespace testing
 
 #endif

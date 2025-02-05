@@ -31,11 +31,11 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
-    ${src}/fuzzing/test_receiver.cpp
-    ${src}/fuzzing/mq_test_interface.cpp
-    ${src}/fuzzing/pipe_test_interface.cpp
-    ${src}/fuzzing/probe.cpp
-    ${src}/fuzzing/can_injector.cpp
+    ${src}/testing/test_receiver.cpp
+    ${src}/testing/mq_test_interface.cpp
+    ${src}/testing/pipe_test_interface.cpp
+    ${src}/testing/probe.cpp
+    ${src}/testing/can_injector.cpp
 )
 
 add_library(avp64 STATIC ${sources})

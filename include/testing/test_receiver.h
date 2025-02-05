@@ -27,7 +27,7 @@ using std::string;
 #define MAP_SIZE_POW2 16
 #define MAP_SIZE (1 << MAP_SIZE_POW2)
 
-namespace fuzzing{
+namespace testing{
 
     class test_receiver final: public suspender, public subscriber{
 
@@ -134,6 +134,6 @@ namespace fuzzing{
             test_interface::response m_current_res;
     };
 
-};
+}  //namespace testing
 
 #endif
