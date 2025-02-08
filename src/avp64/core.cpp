@@ -13,7 +13,7 @@
 #include <sys/mman.h>
 #include <stdexcept>
 
-#define CPU_ARCH "aarch64"
+#define CPU_ARCH "aarch32"
 
 namespace avp64 {
 
@@ -331,10 +331,10 @@ bool core::read_reg_dbg(size_t regno, void* buf, size_t len) {
 
 bool core::write_reg_dbg(size_t regno, const void* buf, size_t len) {
     if (regno == m_core->pc_regid()) {
-        if (len != 8)
+        if (len != 4)
             return false;
 
-        if (*reinterpret_cast<const vcml::u64*>(buf) == program_counter())
+        if (*reinterpret_cast<const vcml::u32*>(buf) == program_counter())
             return true;
 
         // the pc cannot be changed during an ongoing b_transport
@@ -434,16 +434,16 @@ bool core::disassemble(vcml::u8* ibuf, vcml::u64& addr, std::string& code) {
 }
 
 vcml::u64 core::program_counter() {
-    ocx::u64 pc_regid = m_core->pc_regid();
-    vcml::u64 pc = 0;
+    ocx::u32 pc_regid = m_core->pc_regid();
+    vcml::u32 pc = 0;
     VCML_ERROR_ON(!m_core->read_reg(pc_regid, &pc),
                   "Could not read program counter");
     return pc;
 }
 
 vcml::u64 core::stack_pointer() {
-    ocx::u64 sp_regid = m_core->sp_regid();
-    vcml::u64 sp = 0;
+    ocx::u32 sp_regid = m_core->sp_regid();
+    vcml::u32 sp = 0;
     VCML_ERROR_ON(!m_core->read_reg(sp_regid, &sp),
                   "Could not read stack pointer");
     return sp;
@@ -527,43 +527,25 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
     VCML_ERROR_ON(dlsym_err, "Could not load symbol create_instance: %s",
                   dlsym_err);
 
-    m_core = create_instance_func(20201012ull, *this, "Cortex-A72");
+    m_core = create_instance_func(20201012ull, *this, "Cortex-M0");
     VCML_ERROR_ON(!m_core, "Could not create ocx::core instance");
 
     set_little_endian();
 
-    // X0 - X30
-    for (id_t i = 0; i < 31; ++i)
-        define_cpureg_rw(i, mwr::mkstr("X%u", i), 8);
+    // R0 - R15, SP (R13), LR (R14), and PC (R15)
+    for (id_t i = 0; i < 13; ++i)
+        define_cpureg_rw(i, mwr::mkstr("R%u", i), 4);
 
-    define_cpureg_rw(31, "SP", 8);
-    define_cpureg_rw(32, "PC", 8);
-
-    // aarch64 status register and bitfields
-    define_cpureg_rw(33, "CPSR", 4);
-    define_cpureg_rw(50, "SPSR_EL1", 4);
-    define_cpureg_rw(64, "SPSR_EL2", 4);
-    define_cpureg_rw(78, "SPSR_EL3", 4);
-    define_cpureg_rw(92, "SP_EL0", 8);
-    define_cpureg_rw(93, "SP_EL1", 8);
-    define_cpureg_rw(94, "SP_EL2", 8);
-    define_cpureg_rw(95, "SP_EL3", 8);
-    define_cpureg_rw(96, "ELR_EL0", 8);
-    define_cpureg_rw(97, "ELR_EL1", 8);
-    define_cpureg_rw(98, "ELR_EL2", 8);
-    define_cpureg_rw(99, "ELR_EL3", 8);
-
-    // aarch64 floating point registers
-    for (id_t i = 0; i < 32; ++i)
-        define_cpureg_rw(i + 449, mwr::mkstr("D%u", i), 8);
-
-    // aarch64 floating point status registers
-    define_cpureg_rw(192, "FPSR", 4);
-    define_cpureg_rw(193, "FPCR", 4);
+    define_cpureg_rw(13, "SP", 4);
+    define_cpureg_rw(14, "LR", 4);
+    define_cpureg_rw(15, "PC", 4);
 
     m_core->set_id(procid, coreid);
     data.set_cpuid(m_core_id);
     insn.set_cpuid(m_core_id);
+
+
+    //TODO different !?
     timer_events[ARM_TIMER_PHYS] = std::make_shared<sc_core::sc_event>(
         "arm_timer_ns");
     timer_events[ARM_TIMER_VIRT] = std::make_shared<sc_core::sc_event>(

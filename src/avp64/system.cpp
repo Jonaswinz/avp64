@@ -12,7 +12,7 @@
 
 namespace avp64 {
 
-void system::construct_system_arm64() {
+void system::construct_system_arm32() {
     clk_bind(m_clock_cpu, "clk", m_bus, "clk");
     clk_bind(m_clock_cpu, "clk", m_ram, "clk");
     clk_bind(m_clock_cpu, "clk", m_uart0, "clk");
@@ -161,7 +161,7 @@ system::system(const sc_core::sc_module_name& nm):
     m_can("can", addr_can_msgram.get()),
     m_canbridge("canbridge"),
     m_cpu("cpu") {
-    construct_system_arm64();
+    construct_system_arm32();
 }
 
 int system::run() {

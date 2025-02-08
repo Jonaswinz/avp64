@@ -145,7 +145,7 @@ private:
 
     cpu m_cpu;
 
-    void construct_system_arm64();
+    void construct_system_arm32();
 };
 
 } // namespace avp64
