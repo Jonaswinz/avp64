@@ -71,9 +71,10 @@ namespace testing{
 
             status handle_kill();
 
-            mwr::u64 find_breakpoint_address(string breakpoint_name);
+            vcml::u64 find_symbol_address(string breakpoint_name, bool set_breakpoint);
 
             std::vector<breakpoint>::iterator find_breakpoint(string name);
+
             std::vector<breakpoint>::iterator find_breakpoint(mwr::u64 addr);
 
             status handle_set_breakpoint(string &symbol, int offset);

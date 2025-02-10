@@ -358,13 +358,15 @@ namespace testing{
         return STATUS_OK;
     }
 
-    mwr::u64 test_receiver::find_breakpoint_address(string breakpoint_name){
+    vcml::u64 test_receiver::find_symbol_address(string name, bool set_breakpoint){
 
         for (auto* target : target::all()){
 
-            const symbol* sym_ptr = target->symbols().find_symbol(breakpoint_name);
+            const symbol* sym_ptr = target->symbols().find_symbol(name);
 
             if(sym_ptr){
+
+                if(set_breakpoint) target->insert_breakpoint(sym_ptr->virt_addr(), this);
 
                 return sym_ptr->virt_addr();
             }
@@ -536,8 +538,7 @@ namespace testing{
 
         LOG_INFO("Setting end breakpoint.");
         m_run_until_breakpoint = true;
-        m_run_until_breakpoint_addr = find_breakpoint_address(end_breakpoint);
-        handle_set_breakpoint(end_breakpoint, 0);
+        m_run_until_breakpoint_addr = find_symbol_address(end_breakpoint, true);
         m_exit_breakpoint_address = m_run_until_breakpoint_addr;
 
         LOG_INFO("Setting read queue with %s.", mmio_data);
@@ -558,7 +559,7 @@ namespace testing{
 
         LOG_INFO("Setting start breakpoint.");
         m_run_until_breakpoint = true;
-        m_run_until_breakpoint_addr = find_breakpoint_address(start_breakpoint);
+        m_run_until_breakpoint_addr = find_symbol_address(start_breakpoint, true);
         handle_set_breakpoint(start_breakpoint, 0);
 
         LOG_INFO("Continuing until start breakpoint.");
@@ -611,24 +612,30 @@ namespace testing{
 
     void test_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
 
-        if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
-            return;
-        }
-
-
+        // Check if the breakpoint was hit, where we are interested in the return code.
         if(bp.address() == m_exit_breakpoint_address){
-            //This is wrong here, just for testing.
+            // Read the register which contains the return code (this depends on the core used!).
             m_ret_value = read_reg_value("x0");
             LOG_INFO("Exit return value: %d.", m_ret_value);
         }
 
+        // If we are currently in run_until mode ignore all breakpoint hits that are not the target one.
+        if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
+            return;
+        }
+
+        // Wait for all previous events were processes.
         sem_wait(&m_empty_slots);
 
-        m_exit_id_buffer.push_back(status::BREAKPOINT_HIT);
+        // Suspend the simulation if not already TODO: maybe do it differently, so the simulation does not run between this and the line before!
         if(!m_is_sim_suspended){
             m_is_sim_suspended = true;
             suspend();
         }
+
+        // Add to event buffer.
+        m_exit_id_buffer.push_back(status::BREAKPOINT_HIT);
+
         sem_post(&m_full_slots);
 
         mwr::u64 addr = bp.address();
@@ -643,7 +650,7 @@ namespace testing{
                 LOG_INFO("Exit return value: %d.", m_ret_value);
             }
             
-            remove_breakpoint(bp.address(), it-m_active_breakpoints.begin());
+            //remove_breakpoint(bp.address(), it-m_active_breakpoints.begin());
         }
     }
 
