@@ -71,6 +71,8 @@ namespace testing{
 
             status handle_kill();
 
+            mwr::u64 find_breakpoint_address(string breakpoint_name);
+
             std::vector<breakpoint>::iterator find_breakpoint(string name);
             std::vector<breakpoint>::iterator find_breakpoint(mwr::u64 addr);
 
@@ -133,6 +135,10 @@ namespace testing{
 
             test_interface::request m_current_req;
             test_interface::response m_current_res;
+
+            bool m_run_until_breakpoint = false;
+            mwr::u64 m_run_until_breakpoint_addr;
+            mwr::u64 m_exit_breakpoint_address;
     };
 
 }  //namespace testing

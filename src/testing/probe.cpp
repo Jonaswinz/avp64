@@ -28,9 +28,12 @@ namespace testing {
                 size_t queue_available = m_read_queue_length-m_read_queue_index;
 
                 if(tx.get_data_length() <= queue_available){
-
+                    
+                    vcml::log_info("Reading from read queue %d characters.", (int)tx.get_data_length());
                     memcpy(tx.get_data_ptr(), m_read_queue+m_read_queue_index, tx.get_data_length());
-                    m_read_queue_length += tx.get_data_length();
+                    m_read_queue_index += tx.get_data_length();
+
+                    vcml::log_info("Index %d, length %d.", (int)m_read_queue_index, (int)m_read_queue_length);
 
                     tx.set_response_status(tlm::TLM_OK_RESPONSE);
 

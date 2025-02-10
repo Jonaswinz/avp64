@@ -358,6 +358,21 @@ namespace testing{
         return STATUS_OK;
     }
 
+    mwr::u64 test_receiver::find_breakpoint_address(string breakpoint_name){
+
+        for (auto* target : target::all()){
+
+            const symbol* sym_ptr = target->symbols().find_symbol(breakpoint_name);
+
+            if(sym_ptr){
+
+                return sym_ptr->virt_addr();
+            }
+        }
+
+        return -1;
+    }
+
     std::vector<test_receiver::breakpoint>::iterator test_receiver::find_breakpoint(string name){
         auto it = std::find_if(m_active_breakpoints.begin(), m_active_breakpoints.end(), 
                                 [&sn = name] (const breakpoint& bp)-> bool { return sn == bp.name;});
@@ -511,7 +526,6 @@ namespace testing{
     {   
         
         LOG_INFO("Start breakpoint %s, end %s", start_breakpoint.c_str(), end_breakpoint.c_str());
-    
 
         if(mmio_data[mmio_data_length-1] == '\0'){
             LOG_INFO("Loaded test case: %s.", mmio_data);
@@ -519,59 +533,47 @@ namespace testing{
             LOG_INFO("Could not print test case, because there is not a termination character.");
         }
 
+
         LOG_INFO("Setting end breakpoint.");
+        m_run_until_breakpoint = true;
+        m_run_until_breakpoint_addr = find_breakpoint_address(end_breakpoint);
         handle_set_breakpoint(end_breakpoint, 0);
+        m_exit_breakpoint_address = m_run_until_breakpoint_addr;
 
-        size_t mmio_data_index = 0;
-
+        LOG_INFO("Setting read queue with %s.", mmio_data);
         m_probe->set_read_queue(mmio_data, mmio_data_length);
 
         status last_status = handle_continue();
 
-        while(true){
+        //TODO add timeout!
+
+        if(last_status != BREAKPOINT_HIT){
+            LOG_ERROR("Stopped not at the expected breakpoint!");
 
             if(last_status == VP_END){
-                LOG_INFO("Run loop: VP_END.");
-                break;
-            }else if(last_status == MMIO_READ){
-                LOG_INFO("Run loop: MMIO_READ.");
-
-                if(mmio_data_index < mmio_data_length+1){
-                    
-                    LOG_INFO("Run loop: Setting MMIO value %c", mmio_data[mmio_data_index]);
-
-                    last_status = handle_set_mmio_value(&mmio_data[mmio_data_index], 1);
-                    mmio_data_index ++;
-
-                }else{
-                    LOG_INFO("Run loop: ERROR! More data requested!");
-                    char zero = 0;
-                    last_status = handle_set_mmio_value(&zero, 1);
-                }
-
-            }else if(last_status == BREAKPOINT_HIT){
-                LOG_INFO("Run loop: Breakpoint hit.");
-                break;
-            }else{
-                LOG_INFO("Run loop: Other");
-                last_status = handle_continue();
+                //TODO
             }
         }
 
-        //TODO hangle: VP_END
 
         LOG_INFO("Setting start breakpoint.");
+        m_run_until_breakpoint = true;
+        m_run_until_breakpoint_addr = find_breakpoint_address(start_breakpoint);
         handle_set_breakpoint(start_breakpoint, 0);
 
         LOG_INFO("Continuing until start breakpoint.");
 
-        //TODO: VP_END !?
-        while(true){
-            last_status = handle_continue();
-            if(last_status == BREAKPOINT_HIT){
-                break;
+        last_status = handle_continue();
+
+        if(last_status != BREAKPOINT_HIT){
+            LOG_ERROR("Stopped not at the expected breakpoint!");
+
+            if(last_status == VP_END){
+                //TODO
             }
         }
+
+        m_run_until_breakpoint = false;
 
         return STATUS_OK;
     }
@@ -608,6 +610,18 @@ namespace testing{
     }
 
     void test_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
+
+        if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
+            return;
+        }
+
+
+        if(bp.address() == m_exit_breakpoint_address){
+            //This is wrong here, just for testing.
+            m_ret_value = read_reg_value("x0");
+            LOG_INFO("Exit return value: %d.", m_ret_value);
+        }
+
         sem_wait(&m_empty_slots);
 
         m_exit_id_buffer.push_back(status::BREAKPOINT_HIT);
@@ -628,7 +642,7 @@ namespace testing{
                 m_ret_value = read_reg_value("x0");
                 LOG_INFO("Exit return value: %d.", m_ret_value);
             }
-        
+            
             remove_breakpoint(bp.address(), it-m_active_breakpoints.begin());
         }
     }
@@ -662,51 +676,60 @@ namespace testing{
 
     void test_receiver::on_mmio_access(vcml::tlm_generic_payload& tx)
     {
-        LOG_INFO("MMIO access event.");
+        if(!m_run_until_breakpoint){
 
-        tlm::tlm_command cmd = tx.get_command();
-        unsigned char* ptr = tx.get_data_ptr();
-        unsigned int length = tx.get_data_length(); // this should be 1 byte
-        uint64_t mmio_addr = tx.get_address();
+            LOG_INFO("MMIO access event.");
 
-        sem_wait(&m_empty_slots);
+            tlm::tlm_command cmd = tx.get_command();
+            unsigned char* ptr = tx.get_data_ptr();
+            unsigned int length = tx.get_data_length(); // this should be 1 byte
+            uint64_t mmio_addr = tx.get_address();
 
-        if(m_mmio_access->track_mmio_access) //Let's check the client didn't de-activate the tracking while we were waiting
-        {
-            if(cmd == tlm::TLM_READ_COMMAND){
-                m_exit_id_buffer.push_back(status::MMIO_READ);
-                m_mmio_access->read_data.length = length;
-            }else
-            { 
-                m_exit_id_buffer.push_back(status::MMIO_WRITE);
+            sem_wait(&m_empty_slots);
 
-                auto mmio_val = std::make_unique<unsigned char[]>(length);
-
-                for(uint32_t i=0; i<length; i++)
-                    mmio_val[i]= *(ptr+i);
-
-                m_mmio_access->write_data_buffer.push(MMIO_access::data{std::move(mmio_val), length, mmio_addr}); 
-            }
-            if(!m_is_sim_suspended){
-                m_is_sim_suspended = true;
-                suspend();
-            }
-            sem_post(&m_full_slots);
-
-            if(cmd == tlm::TLM_READ_COMMAND)
+            if(m_mmio_access->track_mmio_access) //Let's check the client didn't de-activate the tracking while we were waiting
             {
-                std::unique_lock lk(m_mmio_access->mmio_data_mtx);
-                m_mmio_access->mmio_data_cv.wait(lk, [this]{ return m_mmio_access->read_data.ready; });
+                if(cmd == tlm::TLM_READ_COMMAND){
+                    m_exit_id_buffer.push_back(status::MMIO_READ);
+                    m_mmio_access->read_data.length = length;
+                }else
+                { 
+                    m_exit_id_buffer.push_back(status::MMIO_WRITE);
 
-                m_mmio_access->read_data.ready = false;
-                
-                memcpy(ptr, m_mmio_access->read_data.value.get(), length);
+                    auto mmio_val = std::make_unique<unsigned char[]>(length);
 
-                lk.unlock();
+                    for(uint32_t i=0; i<length; i++)
+                        mmio_val[i]= *(ptr+i);
+
+                    m_mmio_access->write_data_buffer.push(MMIO_access::data{std::move(mmio_val), length, mmio_addr}); 
+                }
+                if(!m_is_sim_suspended){
+                    m_is_sim_suspended = true;
+                    suspend();
+                }
+                sem_post(&m_full_slots);
+
+                if(cmd == tlm::TLM_READ_COMMAND)
+                {
+                    std::unique_lock lk(m_mmio_access->mmio_data_mtx);
+                    m_mmio_access->mmio_data_cv.wait(lk, [this]{ return m_mmio_access->read_data.ready; });
+
+                    m_mmio_access->read_data.ready = false;
+                    
+                    memcpy(ptr, m_mmio_access->read_data.value.get(), length);
+
+                    lk.unlock();
+                }
             }
+            else{
+                // if track_mmio_access is false, then release the lock
+                sem_post(&m_empty_slots);
+            } 
+                
+
+        }else{
+            LOG_INFO("MMIO access event skipped, because of run until breakpoint!");
         }
-        else // if track_mmio_access is false, then release the lock
-            sem_post(&m_empty_slots);
         
         tx.set_response_status(tlm::TLM_OK_RESPONSE);
         // If when a write comes we want to immediately block the simulation this should be enabled
