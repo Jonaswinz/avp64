@@ -40,6 +40,10 @@ namespace testing{
 
             std::function<void(vcml::tlm_generic_payload&)> notify_mmio_access = NULL;
 
+            void set_read_queue(char* queue_pointer, size_t length);
+
+            void reset_read_queue();
+
         private:
             MMIO_access* mmio_access_ptr;
 
@@ -50,6 +54,10 @@ namespace testing{
                                     vcml::tlm_generic_payload& tx, vcml::sc_time& dt) override;
             virtual unsigned int transport_dbg(vcml::tlm_target_socket& origin,
                                     vcml::tlm_generic_payload& tx) override;
+
+            char* m_read_queue = nullptr;
+            size_t m_read_queue_index = 0;
+            size_t m_read_queue_length = 0;
             
         protected:
             virtual void before_end_of_elaboration() override;

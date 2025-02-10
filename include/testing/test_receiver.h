@@ -43,7 +43,7 @@ namespace testing{
                 mwr::u64 addr;
             };
 
-            test_receiver(const string& name, MMIO_access& mmio_access, Can_injector& can_injector);
+            test_receiver(const string& name, probe& get_probe, MMIO_access& mmio_access, Can_injector& can_injector);
 
             void parse_args(int argc, const char* const* argv);
 
@@ -104,6 +104,7 @@ namespace testing{
 
             std::thread m_interface_thread;
 
+            probe* m_probe;
             MMIO_access* m_mmio_access;
             Can_injector* m_can_injector;
 

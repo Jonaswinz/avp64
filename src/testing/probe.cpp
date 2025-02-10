@@ -21,15 +21,33 @@ namespace testing {
 
         // If we're tracking the accesses we're not forwarding the payload to the system bus
         // Ignoring simdev location of 0x10008000
-        if(mmio_access_ptr->track_mmio_access && tx.get_address() != 0x10008000)
-        {
-            notify_mmio_access(tx); // this calls test_gRPCserver::on_mmio_access()
+        if(mmio_access_ptr->track_mmio_access && tx.get_address() != 0x10008000){
+
+            if(tx.get_command() == tlm::TLM_READ_COMMAND && m_read_queue != nullptr && m_read_queue_index < m_read_queue_length){
+                
+                size_t queue_available = m_read_queue_length-m_read_queue_index;
+
+                if(tx.get_data_length() <= queue_available){
+
+                    memcpy(tx.get_data_ptr(), m_read_queue+m_read_queue_index, tx.get_data_length());
+                    m_read_queue_length += tx.get_data_length();
+
+                    tx.set_response_status(tlm::TLM_OK_RESPONSE);
+
+                }else{
+                    //TODO partially from queue !?
+                }
+
+            }else{
+                notify_mmio_access(tx); // this calls test_gRPCserver::on_mmio_access()
+            }
 
             if (tx.get_response_status() != vcml::TLM_OK_RESPONSE)
                 VCML_ERROR("invalid in-bound transaction response status");
         }
-        else
+        else{
             probe_out.b_transport(tx, dt); 
+        }
     }
 
     unsigned int probe::transport_dbg(vcml::tlm_target_socket& origin,
@@ -67,6 +85,18 @@ namespace testing {
             rst.stub();
             reset();
         }
+    }
+
+    void probe::set_read_queue(char* queue_pointer, size_t length){
+        m_read_queue = queue_pointer;
+        m_read_queue_length = length;
+        m_read_queue_index = 0;
+    }
+
+    void probe::reset_read_queue(){
+        m_read_queue = nullptr;
+        m_read_queue_length = 0;
+        m_read_queue_index = 0;
     }
 
 }

@@ -4,8 +4,11 @@ using namespace vcml::debugging;
 
 namespace testing{
 
-    test_receiver::test_receiver(const string& name, testing::MMIO_access& mmio_access, Can_injector& can_injector):
-        suspender(name),subscriber(),m_mmio_access(&mmio_access),
+    test_receiver::test_receiver(const string& name, probe& get_probe, testing::MMIO_access& mmio_access, Can_injector& can_injector):
+        suspender(name),
+        subscriber(),
+        m_probe(&get_probe),
+        m_mmio_access(&mmio_access),
         m_can_injector(&can_injector),
         m_enabled_option("--enable-test-receiver", "Enables the test-receiver to automatically run tests inside avp64."),
         m_communication_option("--test-receiver-interface", "Sets the interfacing method of the test receiver. 0: Message queues, 1: pipes."),
@@ -520,6 +523,8 @@ namespace testing{
         handle_set_breakpoint(end_breakpoint, 0);
 
         size_t mmio_data_index = 0;
+
+        m_probe->set_read_queue(mmio_data, mmio_data_length);
 
         status last_status = handle_continue();
 

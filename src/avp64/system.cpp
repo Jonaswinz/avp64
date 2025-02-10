@@ -173,7 +173,7 @@ system::system(const sc_core::sc_module_name& nm):
     m_can_injector("can_injector"),
     m_mmio_access(),
     m_probe("probe", this->m_mmio_access),
-    m_test_receiver("grpc", this->m_mmio_access, this->m_can_injector) {
+    m_test_receiver("grpc", this->m_probe, this->m_mmio_access, this->m_can_injector) {
         construct_system_arm64();
 
         m_probe.notify_mmio_access = std::bind(&testing::test_receiver::on_mmio_access, &m_test_receiver, std::placeholders::_1);
