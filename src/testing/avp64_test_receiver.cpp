@@ -1,5 +1,5 @@
 #include "testing/avp64_test_receiver.h"
-#include "testing/test_interface.h"
+#include "test_interface.h"
 
 using namespace vcml::debugging;
 
@@ -87,7 +87,7 @@ namespace testing{
             }
 
             //m_interface = new mq_test_interface("/avp64-test-receiver", "/avp64-test-sender");
-            interface = new mq_test_interface(m_mq_request_option.value(), m_mq_response_option.value());
+            interface = new mq_test_interface(this, m_mq_request_option.value(), m_mq_response_option.value());
 
             log_info_message("Interface MQ selected for communication with fd %s and %s.", m_mq_request_option.value().c_str(), m_mq_response_option.value().c_str());  
         }else if(selected_interface == test_interface::PIPE){
@@ -108,7 +108,7 @@ namespace testing{
                 exit(1);
             }
 
-            interface = new pipe_test_interface(pipe_request, pipe_response);   
+            interface = new pipe_test_interface(this, pipe_request, pipe_response);   
             log_info_message("Interface pipes selected for communication with fd %d and %d.", pipe_request, pipe_response);  
         }
 
@@ -263,7 +263,7 @@ namespace testing{
         // Enabling basic block tracking for all targets.
         for (auto* target : target::all())
             target->trace_basic_blocks(this);
-        LOG_INFO("Code coverage enabled.");
+        log_info_message("Code coverage enabled.");
         return STATUS_OK;
     }
 
@@ -276,7 +276,7 @@ namespace testing{
         // Disabling basic block tracking for all targets.
         for (auto* target : target::all())
             target->untrace_basic_blocks(this);
-        LOG_INFO("Code coverage disabled.");
+        log_info_message("Code coverage disabled.");
         return STATUS_OK;
     }
 
@@ -384,7 +384,7 @@ namespace testing{
             m_run_until_breakpoint = true;
 
             // Continues the executio to the start breakpoint where the next run can be started.
-            LOG_INFO("Continuing until start breakpoint.");
+            log_info_message("Continuing until start breakpoint.");
             last_status = handle_continue();
 
             if(last_status != BREAKPOINT_HIT){
@@ -534,7 +534,7 @@ namespace testing{
                 
 
         }else{
-            LOG_INFO("MMIO access event skipped, because of run until breakpoint!");
+            log_info_message("MMIO access event skipped, because of run until breakpoint!");
         }
         
         tx.set_response_status(tlm::TLM_OK_RESPONSE);
@@ -544,7 +544,7 @@ namespace testing{
 
     test_receiver::status avp64_test_receiver::handle_set_mmio_value(char* value, size_t length)
     {
-        LOG_INFO("Writing MMIO value of length %d.", (int)length);
+        log_info_message("Writing MMIO value of length %d.", (int)length);
 
         std::unique_lock lk(m_mmio_access->mmio_data_mtx);
         

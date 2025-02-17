@@ -1,7 +1,6 @@
 #ifndef AVP64_REST_RECEIVER_H
 #define AVP64_REST_RECEIVER_H
 
-#include "testing/test_receiver.h"
 #include "vcml/debugging/suspender.h"
 #include "vcml/debugging/subscriber.h"
 #include "vcml/debugging/target.h"
@@ -16,6 +15,8 @@
 
 #include "probe.h"
 #include "can_injector.h"
+
+#include "test_receiver.h"
 #include "test_interface.h"
 
 using namespace vcml::debugging;
