@@ -1,147 +1,115 @@
-#ifndef TestReceiver_h
-#define TestReceiver_h
+#ifndef TEST_RECEIVER_H
+#define TEST_RECEIVER_H
 
 #include <semaphore.h>
-#include "vcml/debugging/suspender.h"
-#include "vcml/debugging/subscriber.h"
-#include "vcml/debugging/target.h"
-#include "vcml/core/types.h"
-
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <mqueue.h>
-#include <thread>
-#include <sys/types.h>
 #include <sys/shm.h>
 
-#include "probe.h"
-#include "can_injector.h"
-#include "test_interface.h"
-
+#include "testing/test_interface.h"
 using namespace vcml::debugging;
 using std::string;
-
-#define LOG_INFO(fmt, ...) vcml::log_info("TEST_INTERFACE: " fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) vcml::log_error("TEST_INTERFACE: " fmt, ##__VA_ARGS__)
 
 #define MAP_SIZE_POW2 16
 #define MAP_SIZE (1 << MAP_SIZE_POW2)
 
 namespace testing{
 
-    class test_receiver final: public suspender, public subscriber{
+    class test_receiver{
 
-        public:
+        public:   
 
             enum status {
                 STATUS_OK, MMIO_READ, MMIO_WRITE, VP_END, BREAKPOINT_HIT, ERROR=-1
             };
 
-            struct breakpoint{
-                const symbol* ptr;
-                string name;
-                mwr::u64 addr;
-            };
-
-            test_receiver(const string& name, probe& get_probe, MMIO_access& mmio_access, Can_injector& can_injector);
-
-            void parse_args(int argc, const char* const* argv);
+            test_receiver();
 
             ~test_receiver();
 
-            void run();
+            bool start(test_interface* interface);
 
-            void notify_breakpoint_hit(const vcml::debugging::breakpoint& bp) override;
-
-            void notify_basic_block(target& tgt, mwr::u64 pc, size_t blksz, size_t icount) override;
-
-            void on_mmio_access(vcml::tlm_generic_payload& tx);
-
-            void notify_vp_finished();
-
-            char read_reg_value(string reg_name);
-
-        private:
-    
-            void receiver();
-
-            void handle_request(test_interface::request* req, test_interface::response* res);
-
-            status handle_continue();
-
-            status handle_kill();
-
-            vcml::u64 find_symbol_address(string breakpoint_name, bool set_breakpoint);
-
-            std::vector<breakpoint>::iterator find_breakpoint(string name);
-
-            std::vector<breakpoint>::iterator find_breakpoint(mwr::u64 addr);
-
-            status handle_set_breakpoint(string &symbol, int offset);
-
-            status handle_remove_breakpoint(string &sym_name);
-
-            void remove_breakpoint(mwr::u64 addr, int vector_idx);
-
-            status handle_set_mmio_tracking();
-
-            status handle_disable_mmio_tracking();
-
-            status handle_set_mmio_value(char* value, size_t length);
-
-            status handle_set_code_coverage();
-
-            status handle_reset_code_coverage();
-
-            status handle_disable_code_coverage();
-
-            string handle_get_code_coverage();
-
-            char handle_get_exit_status();
-
-            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length);
+            bool start_receiver_in_thread();
 
             status handle_do_run_shm(std::string start_breakpoint, std::string end_breakpoint, int shm_id, unsigned int offset);
 
-            status handle_write_code_coverage(int shm_id, unsigned int offset);
+            status handle_get_code_coverage_shm(int shm_id, unsigned int offset);
+
+        protected:
+
+            void receiver();
+
+            virtual void log_info_message(const char* fmt, ...);
+
+            virtual void log_error_message(const char* fmt, ...);
+
+            void continue_to_next_event();
+        
+            void wait_for_events_processes();
+        
+            void notify_event();
+        
+            void wait_for_event();
+        
+            bool is_event_queue_empty();
+        
+            void add_event_to_queue(test_receiver::status event);
+        
+            status get_and_remove_first_event();
+
+            void reset_code_coverage();
+
+            string get_code_coverage();
+
+            void set_block(mwr::u64 pc);
+
+        private:
+
+            void handle_request(test_interface::request* req, test_interface::response* res);
+
+            virtual status handle_continue() = 0;
+
+            virtual status handle_kill() = 0;
+
+            virtual status handle_set_breakpoint(string &symbol, int offset) = 0;
+
+            virtual status handle_remove_breakpoint(string &sym_name) = 0;
+
+            virtual status handle_set_mmio_tracking() = 0;
+
+            virtual status handle_set_mmio_value(char* value, size_t length) = 0;
+
+            virtual status handle_write_mmio_write_queue(char* value, size_t length) = 0;
+
+            virtual status handle_disable_mmio_tracking() = 0;
+
+            virtual status handle_set_code_coverage() = 0;
+
+            virtual status handle_reset_code_coverage() = 0;
+
+            virtual status handle_disable_code_coverage() = 0;
+
+            virtual string handle_get_code_coverage() = 0;
+
+            virtual char handle_get_exit_status() = 0;
+
+            virtual status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length) = 0;
+
+            std::deque<status> m_event_queue;
+
+            sem_t m_full_slots;
+            sem_t m_empty_slots;
 
             std::thread m_interface_thread;
-
-            probe* m_probe;
-            MMIO_access* m_mmio_access;
-            Can_injector* m_can_injector;
-
-            sem_t m_full_slots, m_empty_slots;
-            std::deque<status> m_exit_id_buffer;
-
-            bool m_is_sim_suspended = false;
-
-            std::vector<breakpoint> m_active_breakpoints;  
-
-            char m_ret_value = 0;
-
-            bool m_kill_server = false;
-
-            mwr::u8 m_bb_array [MAP_SIZE];
-            mwr::u64 m_prev_bb_loc = 0;
-
-            mwr::option<bool> m_enabled_option;
-            mwr::option<string> m_communication_option;
-            mwr::option<string> m_mq_request_option;
-            mwr::option<string> m_mq_response_option;
-            mwr::option<string> m_pipe_request_option;
-            mwr::option<string> m_pipe_response_option;
 
             test_interface* m_interface;
 
             test_interface::request m_current_req;
             test_interface::response m_current_res;
 
-            bool m_run_until_breakpoint = false;
-            mwr::u64 m_run_until_breakpoint_addr;
-            mwr::u64 m_exit_breakpoint_address;
+            mwr::u8 m_bb_array [MAP_SIZE];
+            mwr::u64 m_prev_bb_loc = 0;
     };
 
-}  //namespace testing
+}
+
 
 #endif

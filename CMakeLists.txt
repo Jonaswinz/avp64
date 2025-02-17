@@ -31,6 +31,7 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
+    ${src}/testing/avp64_test_receiver.cpp
     ${src}/testing/test_receiver.cpp
     ${src}/testing/mq_test_interface.cpp
     ${src}/testing/pipe_test_interface.cpp
