@@ -173,19 +173,19 @@ system::system(const sc_core::sc_module_name& nm):
     m_can_injector("can_injector"),
     m_mmio_access(),
     m_probe("probe", this->m_mmio_access),
-    m_test_receiver("grpc", this->m_probe, this->m_mmio_access, this->m_can_injector) {
+    m_testing_receiver("testing_receiver", this->m_probe, this->m_mmio_access, this->m_can_injector) {
         construct_system_arm64();
 
-        m_probe.notify_mmio_access = std::bind(&testing::avp64_test_receiver::on_mmio_access, &m_test_receiver, std::placeholders::_1);
+        m_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1);
     }
 
 void system::parse_args(int argc, const char* const* argv){
-    m_test_receiver.parse_args(argc, argv);
+    m_testing_receiver.parse_args(argc, argv);
 }
 
 int system::run() {
 
-    m_test_receiver.run();
+    m_testing_receiver.run();
 
     double simstart = mwr::timestamp();
     int result = vcml::system::run();
@@ -202,7 +202,7 @@ int system::run() {
     vcml::log_info("  realtime ratio : %.2f / 1s",
                    realtime == 0.0 ? 0.0 : realtime / duration);
 
-    m_test_receiver.notify_vp_finished();
+    m_testing_receiver.notify_vp_finished();
 
     return result;
 }

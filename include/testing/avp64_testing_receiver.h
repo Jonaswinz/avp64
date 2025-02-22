@@ -1,5 +1,5 @@
-#ifndef AVP64_REST_RECEIVER_H
-#define AVP64_REST_RECEIVER_H
+#ifndef AVP64_TESTING_RECEIVER_H
+#define AVP64_TESTING_RECEIVER_H
 
 #include "vcml/debugging/suspender.h"
 #include "vcml/debugging/subscriber.h"
@@ -16,15 +16,16 @@
 #include "probe.h"
 #include "can_injector.h"
 
-#include "test_receiver.h"
-#include "test_interface.h"
+#include "testing_receiver.h"
+#include "testing_communication.h"
 
 using namespace vcml::debugging;
 using std::string;
+using testing::testing_communication;
 
 namespace testing{
 
-    class avp64_test_receiver final: public test_receiver, public suspender, public subscriber{
+    class avp64_testing_receiver final: public testing_receiver, public suspender, public subscriber{
 
         public:
 
@@ -38,11 +39,11 @@ namespace testing{
         
             void log_error_message(const char* fmt, ...) override;
 
-            avp64_test_receiver(const string& name, probe& get_probe, MMIO_access& mmio_access, Can_injector& can_injector);
+            avp64_testing_receiver(const string& name, probe& get_probe, MMIO_access& mmio_access, Can_injector& can_injector);
 
             void parse_args(int argc, const char* const* argv);
 
-            ~avp64_test_receiver();
+            ~avp64_testing_receiver();
 
             void run();
 
@@ -58,9 +59,9 @@ namespace testing{
 
         private:
 
-            status handle_continue() override;
+            status handle_continue(event &last_event) override;
 
-            status handle_kill() override;
+            status handle_kill(bool gracefully) override;
 
             bool find_symbol_address(vcml::u64* addr, string breakpoint_name, bool set_breakpoint);
 
@@ -68,21 +69,23 @@ namespace testing{
 
             std::vector<breakpoint>::iterator find_breakpoint(mwr::u64 addr);
 
-            void remove_breakpoint(mwr::u64 addr, int vector_idx);
-
             status handle_set_breakpoint(string &symbol, int offset) override;
+
+            void remove_breakpoint(mwr::u64 addr, int vector_idx);
 
             status handle_remove_breakpoint(string &sym_name) override;
 
-            status handle_set_mmio_tracking() override;
+            status handle_enable_mmio_tracking(uint64_t start_address, uint64_t end_address, char mode) override;
 
             status handle_disable_mmio_tracking() override;
 
-            status handle_set_mmio_value(char* value, size_t length) override;
+            status handle_set_mmio_read(size_t length, char* value) override;
 
-            status handle_write_mmio_write_queue(char* value, size_t length) override;
+            status handle_add_to_mmio_read_queue(uint64_t address, size_t length, size_t element_count, char* value) override;
 
-            status handle_set_code_coverage() override;
+            status handle_trigger_cpu_interrupt(uint8_t interrupt) override;
+
+            status handle_enable_code_coverage() override;
 
             status handle_reset_code_coverage() override;
 
@@ -90,9 +93,11 @@ namespace testing{
 
             string handle_get_code_coverage() override;
 
-            char handle_get_exit_status() override;
+            status handle_set_return_code_address(uint64_t address, std::string reg_name) override;
 
-            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length) override;
+            uint64_t handle_get_return_code() override;
+
+            status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, uint64_t mmio_address, size_t mmio_length, size_t mmio_element_count, char* mmio_value) override;
 
             probe* m_probe;
             MMIO_access* m_mmio_access;
@@ -102,7 +107,7 @@ namespace testing{
 
             std::vector<breakpoint> m_active_breakpoints;  
 
-            char m_ret_value = 0;
+            uint64_t m_ret_value = 0;
 
             bool m_kill_server = false;
 
@@ -116,6 +121,8 @@ namespace testing{
             bool m_run_until_breakpoint = false;
             mwr::u64 m_run_until_breakpoint_addr;
             mwr::u64 m_exit_breakpoint_address;
+
+            std::mutex m_breakpoint_mutex;
     };
 
 }  //namespace testing

@@ -21,7 +21,7 @@ find_github_repo(vcml "jonaswinz/vcml")
 set(OCX_QEMU_ARM_BUILD_TESTS OFF CACHE BOOL "disable ocx tests")
 find_github_repo(ocx-qemu-arm "snps-virtualprototyping/ocx-qemu-arm")
 
-set(VP_TESTING_INTERFACE_TAG "v0.1" CACHE STRING "Tag of vp-testing-interface")
+set(VP_TESTING_INTERFACE_TAG "master" CACHE STRING "Tag of vp-testing-interface")
 find_github_repo(vp-testing-interface "jonaswinz/vp-testing-interface")
 
 set(src "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -34,7 +34,7 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
-    ${src}/testing/avp64_test_receiver.cpp
+    ${src}/testing/avp64_testing_receiver.cpp
     ${src}/testing/probe.cpp
     ${src}/testing/can_injector.cpp
 )

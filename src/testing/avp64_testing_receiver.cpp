@@ -1,11 +1,11 @@
-#include "testing/avp64_test_receiver.h"
-#include "test_interface.h"
+#include "testing/avp64_testing_receiver.h"
+#include "testing_communication.h"
 
 using namespace vcml::debugging;
 
 namespace testing{
 
-    void avp64_test_receiver::log_info_message(const char* fmt, ...){
+    void avp64_testing_receiver::log_info_message(const char* fmt, ...){
         char buffer[1024];
         va_list args;
         va_start(args, fmt);
@@ -14,7 +14,7 @@ namespace testing{
         vcml::log_info("TEST_INTERFACE: %s", buffer);
     }
 
-    void avp64_test_receiver::log_error_message(const char* fmt, ...){
+    void avp64_testing_receiver::log_error_message(const char* fmt, ...){
         char buffer[1024];
         va_list args;
         va_start(args, fmt);
@@ -23,8 +23,8 @@ namespace testing{
         vcml::log_error("TEST_INTERFACE: %s", buffer);
     }
 
-    avp64_test_receiver::avp64_test_receiver(const string& name, probe& get_probe, testing::MMIO_access& mmio_access, Can_injector& can_injector):
-        test_receiver(),
+    avp64_testing_receiver::avp64_testing_receiver(const string& name, probe& get_probe, testing::MMIO_access& mmio_access, Can_injector& can_injector):
+        testing_receiver(),
         suspender(name),
         subscriber(),
         m_probe(&get_probe),
@@ -37,9 +37,9 @@ namespace testing{
         m_pipe_request_option("--test-receiver-pipe-request", "File descriptor of the pipe where requests are read from. Required for interface 1."),
         m_pipe_response_option("--test-receiver-pipe-response", "File descriptor of the pipe where responses are send to. Required for interface 1.") {}
 
-    avp64_test_receiver::~avp64_test_receiver(){}
+    avp64_testing_receiver::~avp64_testing_receiver(){}
 
-    void avp64_test_receiver::parse_args(int argc, const char* const* argv){
+    void avp64_testing_receiver::parse_args(int argc, const char* const* argv){
         m_enabled_option.parse(argc, argv);
         m_communication_option.parse(argc, argv);
         m_mq_request_option.parse(argc, argv);
@@ -48,7 +48,7 @@ namespace testing{
         m_pipe_response_option.parse(argc, argv);
     }
 
-    void avp64_test_receiver::run(){
+    void avp64_testing_receiver::run(){
 
         // Do not start the test receiver if the option --enable-test-receiver is not set.
         if(!m_enabled_option.has_value() || !m_enabled_option.value()) return;
@@ -61,25 +61,25 @@ namespace testing{
         suspend();
 
         // Initialize the interface with was selected via the options.
-        test_interface* interface;
-        test_interface::interface selected_interface = test_interface::MQ;
+        testing_communication* selected_communication;
+        communication selected_interface = communication::MQ;
 
         if(m_communication_option.has_value()){
             try{
-                selected_interface = (test_interface::interface)std::stoi(m_communication_option.value());
+                selected_interface = (communication)std::stoi(m_communication_option.value());
             }catch(std::exception &e){
                 log_error_message("Selected interface (--test-receiver-interface) is not valid number.");
                 exit(1);
             }
 
-            if(selected_interface >= test_interface::INTERFACE_COUNT){
-                log_error_message("Selected interface (--test-receiver-interface) is invalid. Possible selection 0-%d.", test_interface::INTERFACE_COUNT-1); 
+            if(selected_interface >= communication::COMMUNICATION_COUNT){
+                log_error_message("Selected interface (--test-receiver-interface) is invalid. Possible selection 0-%d.", communication::COMMUNICATION_COUNT-1); 
                 exit(1);
             }
 
         }
         
-        if(selected_interface == test_interface::MQ){
+        if(selected_interface == communication::MQ){
 
             if(!m_mq_request_option.has_value() || !m_mq_response_option.has_value()){
                 log_error_message("In order to use MQ for communication --test-receiver-mq-request and --test-receiver-mq-response must be set!"); 
@@ -87,10 +87,11 @@ namespace testing{
             }
 
             //m_interface = new mq_test_interface("/avp64-test-receiver", "/avp64-test-sender");
-            interface = new mq_test_interface(this, m_mq_request_option.value(), m_mq_response_option.value());
+            selected_communication = new mq_testing_communication(this, m_mq_request_option.value(), m_mq_response_option.value());
 
             log_info_message("Interface MQ selected for communication with fd %s and %s.", m_mq_request_option.value().c_str(), m_mq_response_option.value().c_str());  
-        }else if(selected_interface == test_interface::PIPE){
+        
+        }else if(selected_interface == communication::PIPE){
 
             if(!m_pipe_request_option.has_value() || !m_pipe_response_option.has_value()){
                 log_error_message("In order to use pipes for communication --test-receiver-pipe-request and --test-receiver-pipe-response must be set!"); 
@@ -108,25 +109,172 @@ namespace testing{
                 exit(1);
             }
 
-            interface = new pipe_test_interface(this, pipe_request, pipe_response);   
+            selected_communication = new pipe_testing_communication(this, pipe_request, pipe_response);   
             log_info_message("Interface pipes selected for communication with fd %d and %d.", pipe_request, pipe_response);  
         }
 
-        if(!interface->start()){
+        if(!selected_communication->start()){
             log_error_message("Error starting communication interface!"); 
             exit(1);
         }
         
 
         // Start the testing interface.
-        start(interface);
+        set_communication(selected_communication);
 
         // Start the receiving loop as an independent thread.
         start_receiver_in_thread();
 
     }
 
-    test_receiver::status avp64_test_receiver::handle_continue(){
+    void avp64_testing_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
+        std::lock_guard<std::mutex> lock(m_breakpoint_mutex);
+
+        // Check if the breakpoint was hit, where we are interested in the return code.
+        if(bp.address() == m_exit_breakpoint_address){
+            // Read the register which contains the return code (this depends on the core used!).
+            m_ret_value = read_reg_value("x0");
+            log_info_message("Exit return value: %d.", m_ret_value);
+        }
+
+        // If we are currently in run_until mode ignore all breakpoint hits that are not the target one.
+        if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
+            return;
+        }
+
+        wait_for_events_processes();
+
+        // Suspend the simulation if not already TODO: maybe do it differently, so the simulation does not run between this and the line before!
+        if(!m_is_sim_suspended){
+            m_is_sim_suspended = true;
+            suspend();
+        }
+
+        // If the breakpoint was added to the active breakpoint lists remove it.
+        mwr::u64 addr = bp.address();
+        auto it = find_breakpoint(addr);
+
+        // If we run into the exit breakpoint read the register with the result (0 success, 1 fault)
+        if(it != m_active_breakpoints.end()){
+            log_info_message("Breakpoit %s hit.", it->name.c_str());
+            
+            // Add to event qeueu and signal new event.
+            notify_BREAKPOINT_HIT_event(it->name);
+
+
+            if(!it->name.compare("exit")){
+                m_ret_value = read_reg_value("x0");
+                log_info_message("Exit return value: %d.", m_ret_value);
+            }
+            
+            remove_breakpoint(bp.address(), it-m_active_breakpoints.begin());
+        }
+    }
+
+    void avp64_testing_receiver::notify_basic_block(target& tgt, mwr::u64 pc, size_t blksz, size_t icount)
+    {
+        set_block(pc);
+    }
+
+    void avp64_testing_receiver::on_mmio_access(vcml::tlm_generic_payload& tx)
+    {
+        if(!m_run_until_breakpoint){
+
+            log_info_message("MMIO access event.");
+
+            tlm::tlm_command cmd = tx.get_command();
+            unsigned char* ptr = tx.get_data_ptr();
+            unsigned int length = tx.get_data_length(); // this should be 1 byte
+            uint64_t mmio_addr = tx.get_address();
+
+            wait_for_events_processes();
+
+            if(m_mmio_access->track_mmio_access) //Let's check the client didn't de-activate the tracking while we were waiting
+            {
+                if(!m_is_sim_suspended){
+                    m_is_sim_suspended = true;
+                    suspend();
+                }
+
+                if(cmd == tlm::TLM_READ_COMMAND){
+                    m_mmio_access->read_data.length = length;
+
+                    //TODO (gleiche auch bei write):
+                    //if (std::in_range<uint32_t>(length)) {
+                    //    std::cout << "Safe to cast to int16_t" << std::endl;
+                    //} else {
+                    //    std::cout << "Casting would cause overflow!" << std::endl;
+                    //}
+                    
+                    //Add new event and notify.
+                    notify_MMIO_READ_event(mmio_addr, (uint32_t)length);
+
+                    std::unique_lock lk(m_mmio_access->mmio_data_mtx);
+                    m_mmio_access->mmio_data_cv.wait(lk, [this]{ return m_mmio_access->read_data.ready; });
+
+                    m_mmio_access->read_data.ready = false;
+                    
+                    memcpy(ptr, m_mmio_access->read_data.value.get(), length);
+
+                    lk.unlock();
+
+                }else{ 
+
+                    auto mmio_val = std::make_unique<unsigned char[]>(length);
+
+                    for(uint32_t i=0; i<length; i++)
+                        mmio_val[i]= *(ptr+i);
+
+                    m_mmio_access->write_data_buffer.push(MMIO_access::data{std::move(mmio_val), length, mmio_addr}); 
+                    
+                    //Add new event and notify.
+                    notify_MMIO_WRITE_event(mmio_addr, (uint32_t)length, (char *)ptr);
+                }
+
+            }
+            else{
+                // if track_mmio_access is false, then release the lock
+                continue_to_next_event();
+            } 
+                
+
+        }else{
+            log_info_message("MMIO access event skipped, because of run until breakpoint!");
+        }
+        
+        tx.set_response_status(tlm::TLM_OK_RESPONSE);
+        // If when a write comes we want to immediately block the simulation this should be enabled
+        //while(is_sim_suspended);
+    }
+
+    void avp64_testing_receiver::notify_vp_finished()
+    {
+        wait_for_events_processes();
+        log_info_message("VP finished.");
+
+        notify_VP_END_event();
+
+        log_info_message("Waiting for kill command.");
+
+        //Bussy waiting for getting killed!
+        //TODO differently ?
+        while(!m_kill_server);
+    }
+
+    char avp64_testing_receiver::read_reg_value(string reg_name)
+    {
+        int read_val;
+
+        for (auto* target : target::all()){
+            const cpureg *reg = target->find_cpureg(reg_name);
+            reg->read(&read_val, reg->size);
+        }
+
+        //TODO need to change to a larger than char
+        return (char)read_val;
+    }
+
+    status avp64_testing_receiver::handle_continue(event &last_event){
         
         // Sends greelight to the other threads, so the execution can be continued
         continue_to_next_event();
@@ -143,21 +291,21 @@ namespace testing{
         wait_for_event();
 
         // Sending the reason of the suspending (first element of the event queue)
-        status last_event = get_and_remove_first_event();
+        last_event = get_and_remove_first_event();
 
-        log_info_message("Continued to event: %d", last_event);
+        log_info_message("Continued to event: %d", last_event.event);
 
-        return last_event;
+        return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_kill(){
+    status avp64_testing_receiver::handle_kill(bool gracefully){
         log_info_message("Killing.");
-        //TODO do immediately (gracefully option ?)
+        //TODO implement gracefully
         m_kill_server = true;
         return STATUS_OK;
     }
 
-    bool avp64_test_receiver::find_symbol_address(vcml::u64* addr, string name, bool set_breakpoint){
+    bool avp64_testing_receiver::find_symbol_address(vcml::u64* addr, string name, bool set_breakpoint){
 
         // Searches all targets for a address by the symbole name
         for (auto* target : target::all()){
@@ -174,19 +322,20 @@ namespace testing{
         return false;
     }
 
-    std::vector<avp64_test_receiver::breakpoint>::iterator avp64_test_receiver::find_breakpoint(string name){
+    std::vector<avp64_testing_receiver::breakpoint>::iterator avp64_testing_receiver::find_breakpoint(string name){
         auto it = std::find_if(m_active_breakpoints.begin(), m_active_breakpoints.end(), 
                                 [&sn = name] (const breakpoint& bp)-> bool { return sn == bp.name;});
         return it;
     }
 
-    std::vector<avp64_test_receiver::breakpoint>::iterator avp64_test_receiver::find_breakpoint(mwr::u64 addr){
+    std::vector<avp64_testing_receiver::breakpoint>::iterator avp64_testing_receiver::find_breakpoint(mwr::u64 addr){
         auto it = std::find_if(m_active_breakpoints.begin(), m_active_breakpoints.end(), 
                                 [&sa = addr] (const breakpoint& bp)-> bool { return sa == bp.addr;});
         return it;
     }
 
-    test_receiver::status avp64_test_receiver::handle_set_breakpoint(string &sym_name, int offset) {
+    status avp64_testing_receiver::handle_set_breakpoint(string &sym_name, int offset) {
+        std::lock_guard<std::mutex> lock(m_breakpoint_mutex);
 
         // Sets breakpoint by the symbole name and an offset.
         for (auto* target : target::all()) {
@@ -202,7 +351,7 @@ namespace testing{
                 if(sym_ptr)
                     sym_addr = sym_ptr->virt_addr() + offset;
                 else 
-                    return ERROR;
+                    return STATUS_ERROR;
 
                 if(sym_addr){
                     if(target->insert_breakpoint(sym_addr, this)){ 
@@ -220,8 +369,19 @@ namespace testing{
         return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_remove_breakpoint(string &sym_name){
-        
+    void avp64_testing_receiver::remove_breakpoint(mwr::u64 addr, int vector_idx)
+    {
+        for (auto* target : target::all()){
+            target->remove_breakpoint(addr,this);
+        }
+
+        m_active_breakpoints.erase(m_active_breakpoints.begin() + vector_idx);
+        log_info_message("Breakpoint removed.");
+    }
+
+    status avp64_testing_receiver::handle_remove_breakpoint(string &sym_name){
+        std::lock_guard<std::mutex> lock(m_breakpoint_mutex);
+
         auto it = find_breakpoint(sym_name);
 
         // If the breakpoint was found
@@ -232,34 +392,59 @@ namespace testing{
         } else
             log_error_message("Breakpoint was not set!");
         
-        return ERROR;
+        return STATUS_ERROR;
     }
 
-    void avp64_test_receiver::remove_breakpoint(mwr::u64 addr, int vector_idx)
-    {
-        for (auto* target : target::all()){
-            target->remove_breakpoint(addr,this);
-        }
-
-        m_active_breakpoints.erase(m_active_breakpoints.begin() + vector_idx);
-        log_info_message("Breakpoint removed.");
-    }
-
-    test_receiver::status avp64_test_receiver::handle_set_mmio_tracking(){
+    status avp64_testing_receiver::handle_enable_mmio_tracking(uint64_t start_address, uint64_t end_address, char mode){
         // Enabling MMIO tracking.
+
+        //TODO set addresses and mode
+
         m_mmio_access->track_mmio_access = true;
         log_info_message("MMIO tracking enabled.");
         return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_disable_mmio_tracking(){
+    status avp64_testing_receiver::handle_disable_mmio_tracking(){
         // Disabling MMIO tracking.
         m_mmio_access->track_mmio_access = false;
         log_info_message("MMIO tracking disabled.");
         return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_set_code_coverage(){
+    status avp64_testing_receiver::handle_set_mmio_read(size_t length, char* value)
+    {
+        log_info_message("Writing MMIO value of length %d.", (int)length);
+
+        std::unique_lock lk(m_mmio_access->mmio_data_mtx);
+        
+        m_mmio_access->read_data.length = length;
+
+        auto uchar_arr =  std::make_unique<unsigned char[]>(length);
+        for(size_t i=0; i<length; i++)
+            uchar_arr[i] = value[i];
+
+        m_mmio_access->read_data.value = std::move(uchar_arr);
+
+        m_mmio_access->read_data.ready = true;
+        lk.unlock();
+        m_mmio_access->mmio_data_cv.notify_one();
+
+        return STATUS_OK;
+    }
+
+    status avp64_testing_receiver::handle_add_to_mmio_read_queue(uint64_t address, size_t length, size_t element_count, char* value){
+        //TODO
+        return STATUS_ERROR;
+    }
+
+    status avp64_testing_receiver::handle_trigger_cpu_interrupt(uint8_t interrupt){
+        //TODO
+        return STATUS_ERROR;
+    }
+
+    status avp64_testing_receiver::handle_enable_code_coverage(){
+
         // Enabling basic block tracking for all targets.
         for (auto* target : target::all())
             target->trace_basic_blocks(this);
@@ -267,12 +452,12 @@ namespace testing{
         return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_reset_code_coverage(){
+    status avp64_testing_receiver::handle_reset_code_coverage(){
         reset_code_coverage();
         return STATUS_OK;
     }
 
-    test_receiver::status avp64_test_receiver::handle_disable_code_coverage(){
+    status avp64_testing_receiver::handle_disable_code_coverage(){
         // Disabling basic block tracking for all targets.
         for (auto* target : target::all())
             target->untrace_basic_blocks(this);
@@ -280,7 +465,7 @@ namespace testing{
         return STATUS_OK;
     }
 
-    std::string avp64_test_receiver::handle_get_code_coverage()
+    std::string avp64_testing_receiver::handle_get_code_coverage()
     {
         //TODO is_tracing_basic_blocks not implemented ? 
 
@@ -306,66 +491,63 @@ namespace testing{
         return get_code_coverage();
     }
 
-    void avp64_test_receiver::notify_basic_block(target& tgt, mwr::u64 pc, size_t blksz, size_t icount)
-    {
-        set_block(pc);
+    status avp64_testing_receiver::handle_set_return_code_address(uint64_t address, std::string reg_name){
+        return STATUS_ERROR;
     }
 
-    char avp64_test_receiver::handle_get_exit_status()
+    uint64_t avp64_testing_receiver::handle_get_return_code()
     {   
         log_info_message("Getting return code of %d.", m_ret_value);
         return m_ret_value;
     }
 
-    test_receiver::status avp64_test_receiver::handle_do_run(std::string start_breakpoint, std::string end_breakpoint, char* mmio_data, size_t mmio_data_length)
+    status avp64_testing_receiver::handle_do_run(std::string start_breakpoint, std::string end_breakpoint, uint64_t mmio_address, size_t mmio_length, size_t mmio_element_count, char* mmio_value)
     {   
         // Executing one run from a start breakpoint to an end breakpoint with a fixed MMIO read data
+        log_info_message("Do run from start breakpoint %s to end breakpoint %s with MMIO address %d, length %d and %d elements.", start_breakpoint.c_str(), end_breakpoint.c_str(), mmio_address, mmio_length, mmio_element_count);
 
-        log_info_message("Start breakpoint %s, end %s", start_breakpoint.c_str(), end_breakpoint.c_str());
-
-        // Printing the mmio read data, but only when its zero terminated.
-        if(mmio_data[mmio_data_length-1] == '\0'){
-            log_info_message("Loaded test case: %s.", mmio_data);
-        }else{
-            log_info_message("Could not print test case, because there is not a termination character.");
-        }
 
         // Setting the read queue to our mmio data, so its used without suspending MMIO events.
-        m_probe->set_read_queue(mmio_data, mmio_data_length);
+        // TODO wrong, need to be changed!
+        m_probe->set_read_queue(mmio_value, mmio_element_count);
 
         // Setting end breakpoint. It is asumed here, that the simulation is currently at the start breakpoint or similar (somewhere before the target MMIO access).
         // The end breakpoint is set with run_until, which means that every event is ignored that is not the end breakpoint hit. This makes the execution much faster. The MMIO read queue will still be used. But if the target program requests more data than there is in the read queue this MMIO read event will also be ignored. If then the target program never hits the end breakpoint a infinite loop is then created here!
         log_info_message("Setting end breakpoint.");
 
-        if(!find_symbol_address(&m_run_until_breakpoint_addr, end_breakpoint, true)){
+        if(!find_symbol_address(&m_run_until_breakpoint_addr, end_breakpoint, false)){
             log_error_message("End breakpoint was not found!");
 
             // Resetting and returning error
             m_probe->reset_read_queue();
-            return ERROR;
+            return STATUS_ERROR;
         }
         m_run_until_breakpoint = true;
 
         // Set m_exit_breakpoint_address, so the exit code is still recorded.
         m_exit_breakpoint_address = m_run_until_breakpoint_addr;
 
+        // TODO: restructure that not find_symbol_address and this need to be used!
+        handle_set_breakpoint(end_breakpoint, 0);
+
         // Starts the run and the the next event should be the end breakpoint (run_until).
-        status last_status = handle_continue();
+        event last_event;
+        handle_continue(last_event);
 
         //TODO add timeout!
         
         //If there was a different event, then an error occured.
-        if(last_status != BREAKPOINT_HIT){
+        if(last_event.event != event_type::BREAKPOINT_HIT){
             log_error_message("Stopped not at the expected breakpoint!");
 
-            if(last_status == VP_END){
+            if(last_event.event == event_type::VP_END){
                 log_error_message("VP finished before the end breakpoint!");
             }
 
             // Resetting and returning error
             m_run_until_breakpoint = false;
             m_probe->reset_read_queue();
-            return ERROR;
+            return STATUS_ERROR;
         }
 
         // Only run until the start breakpoint, when a start breakpoint was given. This is for example required in the persistent mode, where the target restarts itself.
@@ -373,9 +555,9 @@ namespace testing{
             // Setting the start breakpoint, which is catched, when the target program loops back to the beginning. This is important for the persistent mode.
             log_info_message("Setting start breakpoint.");
 
-            if(find_symbol_address(&m_run_until_breakpoint_addr, start_breakpoint, true)){
+            if(!find_symbol_address(&m_run_until_breakpoint_addr, start_breakpoint, true)){
                 log_error_message("Start breakpoint was not found!");
-                return ERROR;
+                return STATUS_ERROR;
 
                 // Resetting and returning error
                 m_run_until_breakpoint = false;
@@ -383,21 +565,24 @@ namespace testing{
             }
             m_run_until_breakpoint = true;
 
+            // TODO: restructure that not find_symbol_address and this need to be used!
+            handle_set_breakpoint(start_breakpoint, 0);
+
             // Continues the executio to the start breakpoint where the next run can be started.
             log_info_message("Continuing until start breakpoint.");
-            last_status = handle_continue();
+            handle_continue(last_event);
 
-            if(last_status != BREAKPOINT_HIT){
+            if(last_event.event != event_type::BREAKPOINT_HIT){
                 log_error_message("Stopped not at the expected breakpoint!");
 
-                if(last_status == VP_END){
+                if(last_event.event == event_type::VP_END){
                     log_error_message("VP finished before the start breakpoint!");
                 }
 
                 // Resetting and returning error
                 m_run_until_breakpoint = false;
                 m_probe->reset_read_queue();
-                return ERROR;
+                return STATUS_ERROR;
             }
         }
 
@@ -407,165 +592,4 @@ namespace testing{
 
         return STATUS_OK;
     }
-
-    void avp64_test_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
-
-        // Check if the breakpoint was hit, where we are interested in the return code.
-        if(bp.address() == m_exit_breakpoint_address){
-            // Read the register which contains the return code (this depends on the core used!).
-            m_ret_value = read_reg_value("x0");
-            log_info_message("Exit return value: %d.", m_ret_value);
-        }
-
-        // If we are currently in run_until mode ignore all breakpoint hits that are not the target one.
-        if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
-            return;
-        }
-
-        wait_for_events_processes();
-
-        // Suspend the simulation if not already TODO: maybe do it differently, so the simulation does not run between this and the line before!
-        if(!m_is_sim_suspended){
-            m_is_sim_suspended = true;
-            suspend();
-        }
-
-        // Add to event qeueu.
-        add_event_to_queue(status::BREAKPOINT_HIT);
-
-        notify_event();
-
-        // If the breakpoint was added to the active breakpoint lists remove it.
-        mwr::u64 addr = bp.address();
-        auto it = find_breakpoint(addr);
-
-        // If we run into the exit breakpoint read the register with the result (0 success, 1 fault)
-        if(it != m_active_breakpoints.end()){
-            log_info_message("Breakpoit %s hit.", it->name.c_str());
-            
-            if(!it->name.compare("exit")){
-                m_ret_value = read_reg_value("x0");
-                log_info_message("Exit return value: %d.", m_ret_value);
-            }
-            
-            remove_breakpoint(bp.address(), it-m_active_breakpoints.begin());
-        }
-    }
-
-    char avp64_test_receiver::read_reg_value(string reg_name)
-    {
-        int read_val;
-
-        for (auto* target : target::all()){
-            const cpureg *reg = target->find_cpureg(reg_name);
-            reg->read(&read_val, reg->size);
-        }
-
-        //TODO need to change to a larger than char
-        return (char)read_val;
-    }
-
-    void avp64_test_receiver::notify_vp_finished()
-    {
-        wait_for_events_processes();
-        log_info_message("VP finished.");
-        add_event_to_queue(status::VP_END);
-        notify_event();
-
-        log_info_message("Waiting for kill command.");
-
-        //Bussy waiting for getting killed!
-        //TODO differently ?
-        while(!m_kill_server);
-    }
-
-    void avp64_test_receiver::on_mmio_access(vcml::tlm_generic_payload& tx)
-    {
-        if(!m_run_until_breakpoint){
-
-            log_info_message("MMIO access event.");
-
-            tlm::tlm_command cmd = tx.get_command();
-            unsigned char* ptr = tx.get_data_ptr();
-            unsigned int length = tx.get_data_length(); // this should be 1 byte
-            uint64_t mmio_addr = tx.get_address();
-
-            wait_for_events_processes();
-
-            if(m_mmio_access->track_mmio_access) //Let's check the client didn't de-activate the tracking while we were waiting
-            {
-                if(cmd == tlm::TLM_READ_COMMAND){
-                    add_event_to_queue(status::MMIO_READ);
-                    m_mmio_access->read_data.length = length;
-                }else
-                { 
-                    add_event_to_queue(status::MMIO_WRITE);
-
-                    auto mmio_val = std::make_unique<unsigned char[]>(length);
-
-                    for(uint32_t i=0; i<length; i++)
-                        mmio_val[i]= *(ptr+i);
-
-                    m_mmio_access->write_data_buffer.push(MMIO_access::data{std::move(mmio_val), length, mmio_addr}); 
-                }
-                if(!m_is_sim_suspended){
-                    m_is_sim_suspended = true;
-                    suspend();
-                }
-
-                notify_event();
-
-                if(cmd == tlm::TLM_READ_COMMAND)
-                {
-                    std::unique_lock lk(m_mmio_access->mmio_data_mtx);
-                    m_mmio_access->mmio_data_cv.wait(lk, [this]{ return m_mmio_access->read_data.ready; });
-
-                    m_mmio_access->read_data.ready = false;
-                    
-                    memcpy(ptr, m_mmio_access->read_data.value.get(), length);
-
-                    lk.unlock();
-                }
-            }
-            else{
-                // if track_mmio_access is false, then release the lock
-                continue_to_next_event();
-            } 
-                
-
-        }else{
-            log_info_message("MMIO access event skipped, because of run until breakpoint!");
-        }
-        
-        tx.set_response_status(tlm::TLM_OK_RESPONSE);
-        // If when a write comes we want to immediately block the simulation this should be enabled
-        //while(is_sim_suspended);
-    }
-
-    test_receiver::status avp64_test_receiver::handle_set_mmio_value(char* value, size_t length)
-    {
-        log_info_message("Writing MMIO value of length %d.", (int)length);
-
-        std::unique_lock lk(m_mmio_access->mmio_data_mtx);
-        
-        m_mmio_access->read_data.length = length;
-
-        auto uchar_arr =  std::make_unique<unsigned char[]>(length);
-        for(size_t i=0; i<length; i++)
-            uchar_arr[i] = value[i];
-
-        m_mmio_access->read_data.value = std::move(uchar_arr);
-
-        m_mmio_access->read_data.ready = true;
-        lk.unlock();
-        m_mmio_access->mmio_data_cv.notify_one();
-
-        return STATUS_OK;
-    }
-
-    test_receiver::status avp64_test_receiver::handle_write_mmio_write_queue(char* value, size_t length){
-        //TODO
-        return ERROR;
-    }
-
 };
