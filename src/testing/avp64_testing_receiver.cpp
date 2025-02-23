@@ -5,26 +5,6 @@ using namespace vcml::debugging;
 
 namespace testing{
 
-    void avp64_testing_receiver::log_info_message(const char* fmt, ...){
-        char buffer[1024];
-        va_list args;
-        va_start(args, fmt);
-        vsnprintf(buffer, sizeof(buffer), fmt, args);
-        va_end(args);
-        // Uses vcml logging.
-        vcml::log_info("TEST_INTERFACE: %s", buffer);
-    }
-
-    void avp64_testing_receiver::log_error_message(const char* fmt, ...){
-        char buffer[1024];
-        va_list args;
-        va_start(args, fmt);
-        vsnprintf(buffer, sizeof(buffer), fmt, args);
-        va_end(args);
-        // Uses vcml logging.
-        vcml::log_error("TEST_INTERFACE: %s", buffer);
-    }
-
     avp64_testing_receiver::avp64_testing_receiver(const string& name, mmio_probe& get_probe):
         testing_receiver(),
         suspender(name),
@@ -130,6 +110,26 @@ namespace testing{
 
     }
 
+    void avp64_testing_receiver::log_info_message(const char* fmt, ...){
+        char buffer[1024];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buffer, sizeof(buffer), fmt, args);
+        va_end(args);
+        // Uses vcml logging.
+        vcml::log_info("TEST_INTERFACE: %s", buffer);
+    }
+
+    void avp64_testing_receiver::log_error_message(const char* fmt, ...){
+        char buffer[1024];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buffer, sizeof(buffer), fmt, args);
+        va_end(args);
+        // Uses vcml logging.
+        vcml::log_error("TEST_INTERFACE: %s", buffer);
+    }
+
     void avp64_testing_receiver::notify_breakpoint_hit(const vcml::debugging::breakpoint& bp){
 
         // Check if the breakpoint was hit, where we are interested in the return code.
@@ -144,23 +144,17 @@ namespace testing{
             }
         }
 
-        // If we are currently in run_until mode ignore all breakpoint hits that are not the target one.
-        // With this the performance is improved, because the simulation is not suspended and the breakpoint vector is not searched.
+        // If we are currently in run_until mode ignore all breakpoint hits that are not the target one. With this the performance is improved, because the simulation is not suspended and the breakpoint vector is not searched.
         if(m_run_until_breakpoint && bp.address() != m_run_until_breakpoint_addr){
             return;
         }
 
         wait_for_events_processes();
 
-        // Suspend the simulation if not already TODO: maybe do it differently, so the simulation does not run between this and the line before!
-        if(!m_is_sim_suspended){
-            m_is_sim_suspended = true;
-            suspend();
-        }
+        // Suspend the simulation if not already.
+        suspend_simulation();
 
-        // If the breakpoint was added to the active breakpoint lists remove it.
-        mwr::u64 addr = bp.address();
-
+        // If run until mode is activated, trigger a BREAKPOINT_HIT without a symbol name. This is required for DO_RUN to work, because it also uses the continue function, but without a propertly set breakpoint.
         if(m_run_until_breakpoint){
             notify_event(event{BREAKPOINT_HIT, nullptr, 0});
             return;
@@ -170,7 +164,7 @@ namespace testing{
         {
             std::lock_guard<std::mutex> lock(m_active_breakpoints_mutex);
 
-            auto it = find_breakpoint(addr);
+            auto it = find_breakpoint(bp.address());
 
             // If we run into the exit breakpoint read the register with the result (0 success, 1 fault)
             if(it != m_active_breakpoints.end()){
@@ -191,18 +185,28 @@ namespace testing{
         set_block(pc);
     }
 
-    void avp64_testing_receiver::on_mmio_access(vcml::tlm_generic_payload& tx)
+    void avp64_testing_receiver::on_mmio_access(vcml::tlm_generic_payload& tx, size_t offset)
     {
         // This function will be called if MMIO tracking is enabled (and the mode is set) and a read or write was requested by the CPU for the set range.
         // This function will not be called, if there was a MMIO read and a suitable element in the read queue (managed by the mmio_probe).
 
+        VCML_ERROR_ON(offset >= tx.get_data_length(), "The offset of the mmio access cannot be larger or the same size as the length!");
+
+        tlm::tlm_command cmd = tx.get_command();
+        unsigned char* ptr = tx.get_data_ptr()+offset;
+        unsigned int length = tx.get_data_length()-offset; // this should be 1 byte
+        uint64_t mmio_addr = tx.get_address();
+
+        // Check if length can be casted to 32bit unsigned int (only supported by the communication).
+        VCML_ERROR_ON(!testing::testing_communication::check_cast_to_uint32(length), "MMIO read length can not be casted to uint32. Tracking for longer reads is currently not supported!");
+
+        if(cmd != tlm::TLM_READ_COMMAND && cmd != tlm::TLM_WRITE_COMMAND){
+            log_info_message("Other MMIO event (not handeled).");
+            return;
+        }
+
         // If we are currently in run_until mode ignore all MMIO access events.
         if(!m_run_until_breakpoint){
-
-            tlm::tlm_command cmd = tx.get_command();
-            unsigned char* ptr = tx.get_data_ptr();
-            unsigned int length = tx.get_data_length(); // this should be 1 byte
-            uint64_t mmio_addr = tx.get_address();
 
             wait_for_events_processes();
 
@@ -212,57 +216,45 @@ namespace testing{
 
                 log_info_message("MMIO read event.");
 
-                // Check if length can be casted to 32bit unsigned int (only supported by the communication).
-                if(!testing::testing_communication::check_cast_to_uint32(length)){
-                    log_error_message("MMIO read length can not be casted to uint32. Tracking for longer reads is currently not supported!");
-                    shutdown();
-                }
-                
                 // Add new MMIO_READ event and notify.
                 notify_MMIO_READ_event(mmio_addr, (uint32_t)length);
-
-
-                sem_t* new_mmio_event_mutex = new sem_t;
-                sem_init(new_mmio_event_mutex, 0, 0);
-
-                {
-                    //Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
-                    std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
-
-                    m_mmio_event_queue.push_back(mmio_event{new_mmio_event_mutex, &tx});
-                }
-
-                // Wait for payload data to be set.
-                sem_wait(new_mmio_event_mutex);
-
-                {
-                    //Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
-                    std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
-                    
-                    m_mmio_event_queue.erase(std::remove_if(m_mmio_event_queue.begin(), m_mmio_event_queue.end(),[new_mmio_event_mutex](const mmio_event& event) {
-                        return event.mutex == new_mmio_event_mutex;  // Compare pointers
-                        }),m_mmio_event_queue.end());
-                }
-                
-                sem_destroy(new_mmio_event_mutex);
-                delete new_mmio_event_mutex;
 
             }else if(cmd == tlm::TLM_WRITE_COMMAND){ 
 
                 log_info_message("MMIO write event.");
-
-                // Check if length can be casted to 32bit unsigned int (only supported by the communication).
-                if(!testing::testing_communication::check_cast_to_uint32(length)){
-                    log_error_message("MMIO write length can not be casted to uint32. Tracking for longer writes is currently not supported!");
-                    shutdown();
-                }
                 
                 //Add new event and notify.
                 notify_MMIO_WRITE_event(mmio_addr, (uint32_t)length, (char *)ptr);
-
-            }else{
-                log_info_message("Other MMIO event (not handeled).");
             }
+
+            // Create a new mutex for this MMIO event.
+            sem_t* new_mmio_event_mutex = new sem_t;
+            sem_init(new_mmio_event_mutex, 0, 0);
+
+            {
+                // Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
+                std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
+
+                // Add the new MMIO event to the MMIO event queue.
+                m_mmio_event_queue.push_back(mmio_event{new_mmio_event_mutex, &tx, offset});
+            }
+
+            // Wait for mutex (payload data to be set). This mutex will be release when the command SET_MMIO_DATA is executed.
+            sem_wait(new_mmio_event_mutex);
+
+            {
+                // Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
+                std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
+                
+                // Remove the event again.
+                m_mmio_event_queue.erase(std::remove_if(m_mmio_event_queue.begin(), m_mmio_event_queue.end(),[new_mmio_event_mutex](const mmio_event& event) {
+                    return event.mutex == new_mmio_event_mutex;  // Compare pointers
+                    }),m_mmio_event_queue.end());
+            }
+            
+            // Delete the mutex.
+            sem_destroy(new_mmio_event_mutex);
+            delete new_mmio_event_mutex;
 
         }else{
             log_info_message("MMIO event skipped, because of run until enabled!");
@@ -285,26 +277,6 @@ namespace testing{
         while(!m_kill_server);
     }
 
-    bool avp64_testing_receiver::read_reg_value(uint64_t &read_val, string reg_name){
-        // Reading cpu register of targets. Multiple target are not directly supported yet. Therefore the value gets overwritten if there are multiple targets!
-        for (auto* target : target::all()){
-            const cpureg *reg = target->find_cpureg(reg_name);
-
-            if(!reg){
-                log_info_message("The register with the name %s was not found!", reg_name.c_str());
-                return false;
-            }
-
-            if(reg->size > 8){
-                log_error_message("The requested register is larger thatn 8 bytes, not supported!");
-                return false;
-            }
-            reg->read(&read_val, reg->size);
-        }
-
-        return true;
-    }
-
     status avp64_testing_receiver::handle_continue(event &last_event){
         
         // Sends greelight to the other threads, so the execution can be continued
@@ -321,14 +293,22 @@ namespace testing{
             log_info_message("Event queue not empty! First event: %d", last_event.event);
             return STATUS_OK;
         }
+    
+        {
+            // Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
+            std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
+            if(!m_mmio_event_queue.empty()){
+                log_info_message("Not all MMIO event are handeled. Cannot continue!");
+                return STATUS_ERROR; 
+            }
+        }
 
         log_info_message("Event queue empty, continuing simulation.");
 
-        //TODO check for incomplete MMIO events !?
-
+        // Resumte simulation
         resume_simulation();
 
-        // Run the simulation until an event (MMIO access, breakpoint hit ...)
+        // Wait until the next event (MMIO access, breakpoint hit ...)
         wait_for_event();
 
         // Sending the reason of the suspending (first element of the event queue)
@@ -353,7 +333,7 @@ namespace testing{
         return STATUS_OK;
     }
 
-    bool avp64_testing_receiver::find_symbol_address(vcml::u64* addr, string name, bool set_breakpoint){
+    bool avp64_testing_receiver::find_symbol_address(vcml::u64* addr, string &name, bool set_breakpoint){
 
         // Searches all targets for a address by the symbole name
         for (auto* target : target::all()){
@@ -383,8 +363,18 @@ namespace testing{
         return it;
     }
 
+    void avp64_testing_receiver::remove_breakpoint(mwr::u64 addr, int vector_idx)
+    {
+        for (auto* target : target::all()){
+            target->remove_breakpoint(addr,this);
+        }
+
+        m_active_breakpoints.erase(m_active_breakpoints.begin() + vector_idx);
+        log_info_message("Breakpoint at address %d removed.", addr);
+    }
+
     status avp64_testing_receiver::handle_set_breakpoint(string &sym_name, int offset) {
-        //Synchronize access to the active breakpoint vector, because it may access by multiple threads (simulation and receiving loop).
+        // Synchronize access to the active breakpoint vector, because it may access by multiple threads (simulation and receiving loop).
         std::lock_guard<std::mutex> lock(m_active_breakpoints_mutex);
 
         bool breakpoint_set = false;
@@ -437,18 +427,8 @@ namespace testing{
         return STATUS_OK;
     }
 
-    void avp64_testing_receiver::remove_breakpoint(mwr::u64 addr, int vector_idx)
-    {
-        for (auto* target : target::all()){
-            target->remove_breakpoint(addr,this);
-        }
-
-        m_active_breakpoints.erase(m_active_breakpoints.begin() + vector_idx);
-        log_info_message("Breakpoint at address %d removed.", addr);
-    }
-
     status avp64_testing_receiver::handle_remove_breakpoint(string &sym_name){
-        //Synchronize access to the active breakpoint vector, because it may access by multiple threads (simulation and receiving loop).
+        // Synchronize access to the active breakpoint vector, because it may access by multiple threads (simulation and receiving loop).
         std::lock_guard<std::mutex> lock(m_active_breakpoints_mutex);
 
         auto it = find_breakpoint(sym_name);
@@ -484,7 +464,7 @@ namespace testing{
         mmio_event* first_mmio_event = nullptr;
 
         {
-            //Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
+            // Synchronize access to the mmio event queue vector, because it may access by multiple threads (simulation and receiving loop).
             std::lock_guard<std::mutex> lock(m_mmio_event_queue_mutex);
             
             if(!m_mmio_event_queue.empty()) first_mmio_event = &m_mmio_event_queue.front();
@@ -496,14 +476,14 @@ namespace testing{
             return STATUS_ERROR;
         }
 
-        // Check if there is a mmio event.
-        if(length != first_mmio_event->payload->get_data_length()){
-            log_info_message("The length of the data of this request %d does not match the length of the mmio event (type: %d) payload! %d", length, first_mmio_event->payload->get_data_length(), (uint8_t)first_mmio_event->payload->get_command());
+        // Check if the length of the data in the request matches the length of the mmio request (with offset).
+        if(length != first_mmio_event->payload->get_data_length()-first_mmio_event->offset){
+            log_info_message("The length of the data of this request %d does not match the length of the mmio event payload %d with offset: %d (type: %d)!", length, first_mmio_event->payload->get_data_length(), (int)first_mmio_event->offset, (uint8_t)first_mmio_event->payload->get_command());
             return STATUS_ERROR;
         }
 
         // Writing data to the mmio event payload.
-        memcpy(first_mmio_event->payload->get_data_ptr(), value, first_mmio_event->payload->get_data_length());
+        memcpy(first_mmio_event->payload->get_data_ptr()+first_mmio_event->offset, value, first_mmio_event->payload->get_data_length()-first_mmio_event->offset);
         first_mmio_event->payload->set_response_status(tlm::TLM_OK_RESPONSE);
 
         log_info_message("Successful set of MMIO data to: %d (type: %d).", (int)first_mmio_event->payload->get_address(), (uint8_t)first_mmio_event->payload->get_command());
@@ -514,18 +494,18 @@ namespace testing{
         return STATUS_OK;
     }
 
-    status avp64_testing_receiver::handle_add_to_mmio_read_queue(uint64_t address, size_t length, size_t element_count, char* value){
-        //TODO
-        return STATUS_ERROR;
+    status avp64_testing_receiver::handle_add_to_mmio_read_queue(uint64_t address, size_t length, char* value){
+        // Adding to MMIO read queue of the mmio probe.
+        m_mmio_probe->add_to_read_queue(address, length, value);
+        return STATUS_OK;
     }
 
     status avp64_testing_receiver::handle_trigger_cpu_interrupt(uint8_t interrupt){
-        //TODO
+        // Not implemented yet!
         return STATUS_ERROR;
     }
 
     status avp64_testing_receiver::handle_enable_code_coverage(){
-
         // Enabling basic block tracking for all targets.
         for (auto* target : target::all())
             target->trace_basic_blocks(this);
@@ -546,39 +526,42 @@ namespace testing{
         return STATUS_OK;
     }
 
-    status avp64_testing_receiver::handle_get_code_coverage(string* coverage)
-    {
+    status avp64_testing_receiver::handle_get_code_coverage(string* coverage){
         // Forward the coverage generation to the default testing receiver.
         *coverage = get_code_coverage();
         return STATUS_OK;
     }
 
-    status avp64_testing_receiver::handle_set_return_code_address(uint64_t address, std::string reg_name){
-        return STATUS_ERROR;
+    status avp64_testing_receiver::handle_set_return_code_address(uint64_t address, std::string &reg_name){
+        // Enabling recording of return address by setting the variables.
+        m_ret_address = address;
+        m_ret_recording_enabled = true;
+        m_ret_register = reg_name;
+        return STATUS_OK;
     }
 
-    status avp64_testing_receiver::handle_get_return_code(uint64_t &code)
-    {   
+    status avp64_testing_receiver::handle_get_return_code(uint64_t &code){   
+        // Check if return code was recorded.
         if(!m_ret_value_set){
             log_error_message("Return code was not recorded yet!");
             return STATUS_ERROR;
         }
 
         log_info_message("Getting return code of %d.", m_ret_value);
+        
+        // Resetting the recorded indicator.
         m_ret_value_set = false;
+        
         code = m_ret_value;
-
         return STATUS_OK;
     }
 
-    status avp64_testing_receiver::handle_do_run(std::string start_breakpoint, std::string end_breakpoint, uint64_t mmio_address, size_t mmio_length, size_t mmio_element_count, char* mmio_value)
-    {   
+    status avp64_testing_receiver::handle_do_run(std::string &start_breakpoint, std::string &end_breakpoint, uint64_t mmio_address, size_t mmio_length, char* mmio_value, string &register_name){   
         // Executing one run from a start breakpoint to an end breakpoint with a fixed MMIO read data
-        log_info_message("Do run from start breakpoint %s to end breakpoint %s with MMIO address %d, length %d and %d elements.", start_breakpoint.c_str(), end_breakpoint.c_str(), mmio_address, mmio_length, mmio_element_count);
+        log_info_message("Do run from start breakpoint %s to end breakpoint %s with MMIO address %d and length %d.", start_breakpoint.c_str(), end_breakpoint.c_str(), mmio_address, mmio_length);
 
         // Setting the read queue to our mmio data, so its used without suspending MMIO events.
-        // TODO wrong, need to be changed!
-        m_mmio_probe->set_read_queue(mmio_value, mmio_element_count);
+        m_mmio_probe->set_read_queue(mmio_address, mmio_length, mmio_value);
 
         // Setting end breakpoint. It is asumed here, that the simulation is currently at the start breakpoint or similar (somewhere before the target MMIO access).
         // The end breakpoint is set with run_until, which means that every event is ignored that is not the end breakpoint hit. This makes the execution much faster. The MMIO read queue will still be used. But if the target program requests more data than there is in the read queue this MMIO read event will also be ignored. If then the target program never hits the end breakpoint a infinite loop is then created here!
@@ -588,7 +571,7 @@ namespace testing{
             log_error_message("End breakpoint was not found!");
 
             // Resetting and returning error
-            m_mmio_probe->reset_read_queue();
+            m_mmio_probe->delete_read_queue(mmio_address);
             return STATUS_ERROR;
         }
         m_run_until_breakpoint = true;
@@ -597,11 +580,8 @@ namespace testing{
         m_ret_address = m_run_until_breakpoint_addr;
         m_ret_recording_enabled = true;
 
-        //TODO via parameter!
-        m_ret_register = "x0";
-
-        // TODO: restructure that not find_symbol_address and this need to be used!
-        //handle_set_breakpoint(end_breakpoint, 0);
+        // Setting return register.
+        m_ret_register = register_name;
 
         // Starts the run and the the next event should be the end breakpoint (run_until).
         event last_event;
@@ -609,7 +589,7 @@ namespace testing{
 
         //TODO add timeout!
         
-        //If there was a different event, then an error occured.
+        // If there was a different event, then an error occured.
         if(last_event.event != event_type::BREAKPOINT_HIT){
             log_error_message("Stopped not at the expected breakpoint!");
 
@@ -620,7 +600,7 @@ namespace testing{
             // Resetting and returning error
             m_run_until_breakpoint = false;
             m_ret_recording_enabled = false;
-            m_mmio_probe->reset_read_queue();
+            m_mmio_probe->delete_read_queue(mmio_address);
             return STATUS_ERROR;
         }
 
@@ -636,12 +616,9 @@ namespace testing{
                 // Resetting and returning error
                 m_run_until_breakpoint = false;
                 m_ret_recording_enabled = false;
-                m_mmio_probe->reset_read_queue();
+                m_mmio_probe->delete_read_queue(mmio_address);
             }
             m_run_until_breakpoint = true;
-
-            // TODO: restructure that not find_symbol_address and this need to be used!
-            //handle_set_breakpoint(start_breakpoint, 0);
 
             // Continues the executio to the start breakpoint where the next run can be started.
             log_info_message("Continuing until start breakpoint.");
@@ -657,7 +634,7 @@ namespace testing{
                 // Resetting and returning error
                 m_run_until_breakpoint = false;
                 m_ret_recording_enabled = false;
-                m_mmio_probe->reset_read_queue();
+                m_mmio_probe->delete_read_queue(mmio_address);
                 return STATUS_ERROR;
             }
         }
@@ -665,7 +642,7 @@ namespace testing{
         // Resetting run_until and the MMIO read queue.
         m_run_until_breakpoint = false;
         m_ret_recording_enabled = false;
-        m_mmio_probe->reset_read_queue();
+        m_mmio_probe->delete_read_queue(mmio_address);
 
         return STATUS_OK;
     }
@@ -675,10 +652,8 @@ namespace testing{
         log_error_message("Shutting down!");
 
         // with m_kill_server ?
-
         // TODO + auch mehr benutzen
     }
-
 
     void avp64_testing_receiver::suspend_simulation(){
         if(!m_is_sim_suspended){
@@ -692,5 +667,25 @@ namespace testing{
             m_is_sim_suspended = false;
             resume();
         }
+    }
+
+    bool avp64_testing_receiver::read_reg_value(uint64_t &read_val, string &reg_name){
+        // Reading cpu register of targets. Multiple target are not directly supported yet. Therefore the value gets overwritten if there are multiple targets!
+        for (auto* target : target::all()){
+            const cpureg *reg = target->find_cpureg(reg_name);
+
+            if(!reg){
+                log_info_message("The register with the name %s was not found!", reg_name.c_str());
+                return false;
+            }
+
+            if(reg->size > 8){
+                log_error_message("The requested register is larger thatn 8 bytes, not supported!");
+                return false;
+            }
+            reg->read(&read_val, reg->size);
+        }
+
+        return true;
     }
 };

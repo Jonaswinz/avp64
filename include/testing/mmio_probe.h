@@ -3,6 +3,7 @@
 
 #include <mutex> 
 #include <condition_variable> 
+#include <unordered_map>
 #include "vcml/core/component.h"
 
 namespace testing{
@@ -11,48 +12,71 @@ namespace testing{
     {
         public:
 
+            // Available tracking modes.
             enum tracking_mode{
                 FULL_TRACKING, READ_TRACKING, WRITE_TRACKING
             };
 
+            // Represents a MMIO read queue.
+            struct read_queue{
+                uint64_t data_length;
+                uint64_t data_index;
+                char* data;
+            };
+
+            // In and output socket of this VCML component.
             vcml::tlm_target_socket probe_in;
             vcml::tlm_initiator_socket probe_out;
 
+            // Creates this MMIO probe with a SystemC name.
             mmio_probe(const vcml::sc_module_name& nm);
-            virtual void reset() override;
 
-            std::function<void(vcml::tlm_generic_payload&)> notify_mmio_access = NULL;
+            // Implementation of vcml::components reset method.
+            void reset() override;
 
-            void set_read_queue(char* queue_pointer, size_t length);
-
-            void reset_read_queue();
-
+            // Enables tracking in general between two addresses and for a given mode.
             void enable_tracking(uint64_t start_address, uint64_t end_address, tracking_mode mode);
 
+            // Disables the tracking.
             void disable_tracking();
+
+            // Variable for the callback when an MMIO access needs to be handeled. Should be set to the testing_receiver.
+            std::function<void(vcml::tlm_generic_payload& tx, size_t offset)> notify_mmio_access = NULL;
+
+            // Sets a new MMIO read queue.
+            void set_read_queue(uint64_t address, size_t length, char* data);
+
+            // Adds to an existing MMIO read queue.
+            void add_to_read_queue(uint64_t address, size_t length, char* data);
+
+            // Deletes and existing MMIO read queue.
+            void delete_read_queue(uint64_t address);
+
+        protected:
+
+            // Implementation of vcml::components before_end_of_elaboration method.
+            void before_end_of_elaboration() override;
 
         private:
 
-            virtual bool get_direct_mem_ptr(vcml::tlm_target_socket& origin,
-                                            vcml::tlm_generic_payload& tx, vcml::tlm_dmi& dmi_data) override;
+            // Implementation of vcml::components reset method.
+            bool get_direct_mem_ptr(vcml::tlm_target_socket& origin, vcml::tlm_generic_payload& tx, vcml::tlm_dmi& dmi_data) override;
+            
+            // Implementation of vcml::components b_transport method. Here the MMIO interception takes place.
+            void b_transport(vcml::tlm_target_socket& origin, vcml::tlm_generic_payload& tx, vcml::sc_time& dt) override;
+            
+            // Implementation of vcml::components transport_dbg method.
+            unsigned int transport_dbg(vcml::tlm_target_socket& origin, vcml::tlm_generic_payload& tx) override;
 
-            virtual void b_transport(vcml::tlm_target_socket& origin, 
-                                    vcml::tlm_generic_payload& tx, vcml::sc_time& dt) override;
-            virtual unsigned int transport_dbg(vcml::tlm_target_socket& origin,
-                                    vcml::tlm_generic_payload& tx) override;
-
-            char* m_read_queue = nullptr;
-            size_t m_read_queue_index = 0;
-            size_t m_read_queue_length = 0;
-
+            // Settings for the tracking
             bool m_tracking_enabled = false;
             uint64_t m_tracking_start_address = 0;
             uint64_t m_tracking_end_address = 0;
             tracking_mode m_tracking_mode;
             
-        protected:
-            virtual void before_end_of_elaboration() override;
-
+            // Management of the different read queues.
+            std::unordered_map<uint64_t, read_queue> m_read_queues;
+            std::mutex m_read_queues_mutex;
     };
 
 } //namespace testing

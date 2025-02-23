@@ -170,6 +170,9 @@ system::system(const sc_core::sc_module_name& nm):
     m_mmio_probe("probe"),
     m_testing_receiver("testing_receiver", this->m_mmio_probe) {
         construct_system_arm64();
+
+        // Setting notify_mmio_access callback.
+        m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2);
     }
 
 void system::parse_args(int argc, const char* const* argv){
@@ -177,7 +180,7 @@ void system::parse_args(int argc, const char* const* argv){
 }
 
 int system::run() {
-
+ 
     // TODO earlier ?
     m_testing_receiver.init();
 
