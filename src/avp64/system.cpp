@@ -52,8 +52,8 @@ void system::construct_system_arm64() {
     //tlm_bind(m_bus, m_cpu, "bus");
 
     //Fuzzer:
-    tlm_bind(m_cpu,"bus",m_probe, "probe_in");
-    tlm_bind(m_bus, m_probe, "probe_out");
+    tlm_bind(m_cpu,"bus",m_mmio_probe, "probe_in");
+    tlm_bind(m_bus, m_mmio_probe, "probe_out");
 
 
     tlm_bind(m_bus, m_ram, "in", addr_ram);
@@ -100,10 +100,7 @@ void system::construct_system_arm64() {
     // Connect CAN device to CAN controller
     m_canbus.connect(m_can);
     m_canbus.connect(m_canbridge);
-
-    //Fuzzer:
-    m_canbus.connect(m_can_injector);
-
+    
     // IRQs
     gpio_bind(m_uart0, "irq", m_cpu, "spi", irq_uart0);
     gpio_bind(m_uart1, "irq", m_cpu, "spi", irq_uart1);
@@ -170,13 +167,9 @@ system::system(const sc_core::sc_module_name& nm):
     m_can("can", addr_can_msgram.get()),
     m_canbridge("canbridge"),
     m_cpu("cpu"),
-    m_can_injector("can_injector"),
-    m_mmio_access(),
-    m_probe("probe", this->m_mmio_access),
-    m_testing_receiver("testing_receiver", this->m_probe, this->m_mmio_access, this->m_can_injector) {
+    m_mmio_probe("probe"),
+    m_testing_receiver("testing_receiver", this->m_mmio_probe) {
         construct_system_arm64();
-
-        m_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1);
     }
 
 void system::parse_args(int argc, const char* const* argv){
@@ -185,7 +178,8 @@ void system::parse_args(int argc, const char* const* argv){
 
 int system::run() {
 
-    m_testing_receiver.run();
+    // TODO earlier ?
+    m_testing_receiver.init();
 
     double simstart = mwr::timestamp();
     int result = vcml::system::run();

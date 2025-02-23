@@ -149,9 +149,7 @@ private:
 
     void construct_system_arm64();
 
-    testing::Can_injector m_can_injector;
-    testing::MMIO_access m_mmio_access;
-    testing::probe m_probe;
+    testing::mmio_probe m_mmio_probe;
     testing::avp64_testing_receiver m_testing_receiver;
 };
 

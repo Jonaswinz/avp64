@@ -35,8 +35,7 @@ set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
     ${src}/testing/avp64_testing_receiver.cpp
-    ${src}/testing/probe.cpp
-    ${src}/testing/can_injector.cpp
+    ${src}/testing/mmio_probe.cpp
 )
 
 add_library(avp64 STATIC ${sources})

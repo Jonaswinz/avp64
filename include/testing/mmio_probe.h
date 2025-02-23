@@ -7,35 +7,18 @@
 
 namespace testing{
 
-    class MMIO_access
+    class mmio_probe : public vcml::component
     {
         public:
-            MMIO_access(){}
 
-            struct data{
-                std::unique_ptr<unsigned char[]> value;
-                uint32_t length;
-                uint64_t addr = 0; 
-                bool ready;
+            enum tracking_mode{
+                FULL_TRACKING, READ_TRACKING, WRITE_TRACKING
             };
-            std::queue<data> write_data_buffer;
-            data read_data;
 
-            std::mutex mmio_data_mtx;
-            std::condition_variable mmio_data_cv;
-
-            bool track_mmio_access = false;
-
-            ~MMIO_access(){}
-    };
-
-    class probe : public vcml::component
-    {
-        public:
             vcml::tlm_target_socket probe_in;
             vcml::tlm_initiator_socket probe_out;
 
-            probe(const vcml::sc_module_name& nm, MMIO_access& mmio_access);
+            mmio_probe(const vcml::sc_module_name& nm);
             virtual void reset() override;
 
             std::function<void(vcml::tlm_generic_payload&)> notify_mmio_access = NULL;
@@ -44,8 +27,11 @@ namespace testing{
 
             void reset_read_queue();
 
+            void enable_tracking(uint64_t start_address, uint64_t end_address, tracking_mode mode);
+
+            void disable_tracking();
+
         private:
-            MMIO_access* mmio_access_ptr;
 
             virtual bool get_direct_mem_ptr(vcml::tlm_target_socket& origin,
                                             vcml::tlm_generic_payload& tx, vcml::tlm_dmi& dmi_data) override;
@@ -58,6 +44,11 @@ namespace testing{
             char* m_read_queue = nullptr;
             size_t m_read_queue_index = 0;
             size_t m_read_queue_length = 0;
+
+            bool m_tracking_enabled = false;
+            uint64_t m_tracking_start_address = 0;
+            uint64_t m_tracking_end_address = 0;
+            tracking_mode m_tracking_mode;
             
         protected:
             virtual void before_end_of_elaboration() override;

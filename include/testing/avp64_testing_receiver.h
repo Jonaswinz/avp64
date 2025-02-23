@@ -13,8 +13,7 @@
 #include <sys/types.h>
 #include <sys/shm.h>
 
-#include "probe.h"
-#include "can_injector.h"
+#include "mmio_probe.h"
 
 #include "testing_receiver.h"
 #include "testing_communication.h"
@@ -35,17 +34,22 @@ namespace testing{
                 mwr::u64 addr;
             };
 
+            struct mmio_event{
+                sem_t* mutex;
+                vcml::tlm_generic_payload* payload;
+            };
+
             void log_info_message(const char* fmt, ...) override;
         
             void log_error_message(const char* fmt, ...) override;
 
-            avp64_testing_receiver(const string& name, probe& get_probe, MMIO_access& mmio_access, Can_injector& can_injector);
+            avp64_testing_receiver(const string& name, mmio_probe& get_probe);
 
             void parse_args(int argc, const char* const* argv);
 
             ~avp64_testing_receiver();
 
-            void run();
+            void init();
 
             void notify_breakpoint_hit(const vcml::debugging::breakpoint& bp) override;
 
@@ -55,7 +59,7 @@ namespace testing{
 
             void notify_vp_finished();
 
-            char read_reg_value(string reg_name);
+            bool read_reg_value(uint64_t &read_val, string reg_name);
 
         private:
 
@@ -79,7 +83,7 @@ namespace testing{
 
             status handle_disable_mmio_tracking() override;
 
-            status handle_set_mmio_read(size_t length, char* value) override;
+            status handle_set_mmio_value(size_t length, char* value) override;
 
             status handle_add_to_mmio_read_queue(uint64_t address, size_t length, size_t element_count, char* value) override;
 
@@ -91,23 +95,36 @@ namespace testing{
 
             status handle_disable_code_coverage() override;
 
-            string handle_get_code_coverage() override;
+            status handle_get_code_coverage(string* coverage) override;
 
             status handle_set_return_code_address(uint64_t address, std::string reg_name) override;
 
-            uint64_t handle_get_return_code() override;
+            status handle_get_return_code(uint64_t &code) override;
 
             status handle_do_run(std::string start_breakpoint, std::string end_breakpoint, uint64_t mmio_address, size_t mmio_length, size_t mmio_element_count, char* mmio_value) override;
 
-            probe* m_probe;
-            MMIO_access* m_mmio_access;
-            Can_injector* m_can_injector;
+            // Stopping the whole VP, when error occured or killing non gracefully.
+            void shutdown();
+
+            void suspend_simulation();
+
+            void resume_simulation();
+
+            mmio_probe* m_mmio_probe;
 
             bool m_is_sim_suspended = false;
 
             std::vector<breakpoint> m_active_breakpoints;  
+            std::mutex m_active_breakpoints_mutex;
 
+            std::vector<mmio_event> m_mmio_event_queue;  
+            std::mutex m_mmio_event_queue_mutex;
+
+            std::string m_ret_register;
+            uint64_t m_ret_address = 0;
+            bool m_ret_recording_enabled = false;
             uint64_t m_ret_value = 0;
+            bool m_ret_value_set = false;
 
             bool m_kill_server = false;
 
@@ -120,9 +137,6 @@ namespace testing{
 
             bool m_run_until_breakpoint = false;
             mwr::u64 m_run_until_breakpoint_addr;
-            mwr::u64 m_exit_breakpoint_address;
-
-            std::mutex m_breakpoint_mutex;
     };
 
 }  //namespace testing
