@@ -8,12 +8,13 @@
  ******************************************************************************/
 
 #include "avp64/core.h"
+#include "mwr/core/types.h"
 
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <stdexcept>
 
-#define CPU_ARCH "aarch32"
+#define CPU_ARCH "arm-m"
 
 namespace avp64 {
 
@@ -321,6 +322,22 @@ void core::simulate(size_t cycles) {
     // insn_count() is only reset at the beginning of step(), but not at
     // the end, so the number of cycles can only be summed up in the
     // following quantum
+
+    /*
+    if(m_first_simulate){
+
+        // Set PC to 0x1 for Thumb mode
+        vcml::u32 start_pc = 0x1;
+        if (!m_core->write_reg(m_core->pc_regid(), &start_pc)) {
+            VCML_ERROR("Failed to set program counter");
+        }
+
+        log_info("PC register: %d", (int)program_counter());
+    
+        m_first_simulate = false;
+    }
+    */
+
     m_run_cycles += m_core->insn_count();
     m_core->step(cycles);
 }
@@ -476,6 +493,7 @@ void core::end_of_elaboration() {
                           opts.get());
     }
     vcml::processor::end_of_elaboration();
+
 }
 
 void core::load_symbols() {
@@ -527,22 +545,39 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
     VCML_ERROR_ON(dlsym_err, "Could not load symbol create_instance: %s",
                   dlsym_err);
 
-    m_core = create_instance_func(20201012ull, *this, "Cortex-M0");
+    m_core = create_instance_func(20201012ull, *this, "Cortex-M33");
     VCML_ERROR_ON(!m_core, "Could not create ocx::core instance");
 
     set_little_endian();
 
-    // R0 - R15, SP (R13), LR (R14), and PC (R15)
-    for (id_t i = 0; i < 13; ++i)
-        define_cpureg_rw(i, mwr::mkstr("R%u", i), 4);
 
-    define_cpureg_rw(13, "SP", 4);
-    define_cpureg_rw(14, "LR", 4);
-    define_cpureg_rw(15, "PC", 4);
+    for (id_t i = 0; i < 13; ++i)
+        define_cpureg_rw(i, mwr::mkstr("r%u", i), 4);
+
+    define_cpureg_rw(13, "sp", 4);        // Stack Pointer (alias for msp/psp)
+    define_cpureg_rw(14, "lr", 4);        // Link Register
+    define_cpureg_rw(15, "pc", 4);        // Program Counter
+    define_cpureg_rw(16, "psp", 4);       // Process Stack Pointer
+    define_cpureg_rw(17, "control", 4);   // CONTROL Register
+    define_cpureg_rw(18, "primask", 4);   // PRIMASK Register
+    define_cpureg_rw(19, "basepri", 4);   // BASEPRI Register
+    define_cpureg_rw(20, "faultmask", 4); // FAULTMASK (fix typo)
+    define_cpureg_rw(21, "xpsr", 4);      // Program Status Register
 
     m_core->set_id(procid, coreid);
     data.set_cpuid(m_core_id);
     insn.set_cpuid(m_core_id);
+
+    // Setup SysTick Timer or ARM Generic Timer
+    timer_events[0] = std::make_shared<sc_core::sc_event>("SysTick");
+
+    // NVIC IRQ Binding
+    //sc_signal<bool> nvic_irq;
+    //gpio_bind(nvic_irq, "irq", m_core, "irq");
+
+    // Secure IRQ (TrustZone)
+    //sc_signal<bool> nvic_sirq;
+    //gpio_bind(nvic_sirq, "sirq", m_core, "sirq");
 
 
     //TODO different !?
