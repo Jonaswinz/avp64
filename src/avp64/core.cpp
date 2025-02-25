@@ -13,7 +13,7 @@
 #include <sys/mman.h>
 #include <stdexcept>
 
-#define CPU_ARCH "aarch32"
+#define CPU_ARCH "arm-m"
 
 namespace avp64 {
 
@@ -534,11 +534,12 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
 
     // R0 - R15, SP (R13), LR (R14), and PC (R15)
     for (id_t i = 0; i < 13; ++i)
-        define_cpureg_rw(i, mwr::mkstr("R%u", i), 4);
+        define_cpureg_rw(i, mwr::mkstr("r%u", i), 4);
 
-    define_cpureg_rw(13, "SP", 4);
-    define_cpureg_rw(14, "LR", 4);
-    define_cpureg_rw(15, "PC", 4);
+    define_cpureg_rw(13, "sp", 4);
+    define_cpureg_rw(14, "lr", 4);
+    define_cpureg_rw(15, "pc", 4);
+    define_cpureg_rw(16, "xpsr", 4);
 
     m_core->set_id(procid, coreid);
     data.set_cpuid(m_core_id);
