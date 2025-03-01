@@ -1,6 +1,7 @@
 #ifndef AVP64_TESTING_RECEIVER_H
 #define AVP64_TESTING_RECEIVER_H
 
+#include "avp64/core.h"
 #include "vcml/debugging/suspender.h"
 #include "vcml/debugging/subscriber.h"
 #include "vcml/debugging/target.h"
@@ -43,8 +44,8 @@ namespace testing{
                 size_t offset = 0;
             };
 
-            // Constructs the testing_receiver for AVP64 with a SystemC name and a reference to the mmio_probe.
-            avp64_testing_receiver(const string& name, mmio_probe& get_probe);
+            // Constructs the testing_receiver for AVP64 with a SystemC name, a reference to the mmio_probe, and to the target core that should be watched / interacted with.
+            avp64_testing_receiver(const string& name, mmio_probe& get_probe, avp64::core* target_core);
 
             // Destructor.
             ~avp64_testing_receiver();
@@ -184,6 +185,8 @@ namespace testing{
 
             // Address of the release of the run_until mode.
             mwr::u64 m_run_until_breakpoint_addr;
+
+            avp64::core* target_core;
 
             // Options to set the settings of this testing_receiver.
             mwr::option<bool> m_enabled_option;

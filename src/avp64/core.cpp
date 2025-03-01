@@ -321,6 +321,17 @@ void core::simulate(size_t cycles) {
     // insn_count() is only reset at the beginning of step(), but not at
     // the end, so the number of cycles can only be summed up in the
     // following quantum
+
+    // If a jump was requested perform this jump, before continuing with the simulation.
+    if(jump_requested){
+        // Setting the PC to the jump address.
+        if(write_reg_dbg(m_core->pc_regid(), &jump_addr, sizeof(jump_addr))){
+            jump_requested = false;
+        }else{
+            log_error("Jump to %d was not successfull!", (int)jump_addr);
+        }
+    }
+
     m_run_cycles += m_core->insn_count();
     m_core->step(cycles);
 }
@@ -573,6 +584,13 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
         "arm_timer_hyp");
     timer_events[ARM_TIMER_SEC] = std::make_shared<sc_core::sc_event>(
         "arm_timer_s");
+}
+
+bool core::jump_to(vcml::u64 address){
+    jump_requested = true;
+    jump_addr = address;
+
+    return true;
 }
 
 core::~core() {

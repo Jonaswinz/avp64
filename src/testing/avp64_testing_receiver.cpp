@@ -5,17 +5,21 @@ using namespace vcml::debugging;
 
 namespace testing{
 
-    avp64_testing_receiver::avp64_testing_receiver(const string& name, mmio_probe& get_probe):
+    avp64_testing_receiver::avp64_testing_receiver(const string& name, mmio_probe& get_probe, avp64::core* core):
         testing_receiver(),
         suspender(name),
         subscriber(),
         m_mmio_probe(&get_probe),
+        target_core(core),
         m_enabled_option("--enable-test-receiver", "Enables the test-receiver to automatically run tests inside avp64."),
         m_communication_option("--test-receiver-interface", "Sets the interfacing method of the test receiver. 0: Message queues, 1: pipes."),
         m_mq_request_option("--test-receiver-mq-request", "File descriptor of the message queue where requests are read from. Required for interface 0."),
         m_mq_response_option("--test-receiver-mq-response", "File descriptor of the message queue where responses are send to. Required for interface 0."),
         m_pipe_request_option("--test-receiver-pipe-request", "File descriptor of the pipe where requests are read from. Required for interface 1."),
-        m_pipe_response_option("--test-receiver-pipe-response", "File descriptor of the pipe where responses are send to. Required for interface 1.") {}
+        m_pipe_response_option("--test-receiver-pipe-response", "File descriptor of the pipe where responses are send to. Required for interface 1.") {
+
+            VCML_ERROR_ON(target_core == nullptr, "Target core is a nullptr!");
+        }
 
     avp64_testing_receiver::~avp64_testing_receiver(){}
 
@@ -336,17 +340,17 @@ namespace testing{
     bool avp64_testing_receiver::find_symbol_address(vcml::u64* addr, string &name, bool set_breakpoint){
 
         // Searches all targets for a address by the symbole name
-        for (auto* target : target::all()){
-            const symbol* sym_ptr = target->symbols().find_symbol(name);
-            if(sym_ptr){
-                
-                // Sets a breakpoint to this address if set_breakpoint is set.
-                // This sets a breakpoint without beeing managed by active_breakpoint vectors (used for example by run_until mode).
-                if(set_breakpoint) target->insert_breakpoint(sym_ptr->virt_addr(), this);
-                *addr = sym_ptr->virt_addr();
-                return true;
-            }
+ 
+        const symbol* sym_ptr = static_cast<vcml::debugging::target*>(target_core)->symbols().find_symbol(name);
+        if(sym_ptr){
+            
+            // Sets a breakpoint to this address if set_breakpoint is set.
+            // This sets a breakpoint without beeing managed by active_breakpoint vectors (used for example by run_until mode).
+            if(set_breakpoint) static_cast<vcml::debugging::target*>(target_core)->insert_breakpoint(sym_ptr->virt_addr(), this);
+            *addr = sym_ptr->virt_addr();
+            return true;
         }
+        
 
         return false;
     }
@@ -365,10 +369,8 @@ namespace testing{
 
     void avp64_testing_receiver::remove_breakpoint(mwr::u64 addr, int vector_idx)
     {
-        for (auto* target : target::all()){
-            target->remove_breakpoint(addr,this);
-        }
-
+        static_cast<vcml::debugging::target*>(target_core)->remove_breakpoint(addr,this);
+        
         m_active_breakpoints.erase(m_active_breakpoints.begin() + vector_idx);
         log_info_message("Breakpoint at address %d removed.", addr);
     }
@@ -377,52 +379,41 @@ namespace testing{
         // Synchronize access to the active breakpoint vector, because it may access by multiple threads (simulation and receiving loop).
         std::lock_guard<std::mutex> lock(m_active_breakpoints_mutex);
 
-        bool breakpoint_set = false;
-
         // Sets breakpoint by the symbole name and an offset.
-        for (auto* target : target::all()) {
+        auto it = find_breakpoint(sym_name);
 
-            auto it = find_breakpoint(sym_name);
-
-            // If the breakpoint is not already set
-            if(it != m_active_breakpoints.end()){
-                log_info_message("Breakpoint at symbol %s already set!", sym_name.c_str());
-            }
-
-            // Get the symbol of the eg main from the symbols' list
-            const symbol* sym_ptr = target->symbols().find_symbol(sym_name);
-            mwr::u64 sym_addr;
-
-            // Check if symbol exist.
-            if(!sym_ptr){
-                log_error_message("Breakpoints symbol %s not found!", sym_name.c_str());
-                continue;
-            }
-            
-            sym_addr = sym_ptr->virt_addr() + offset;
-            
-            // Check if virt_addr() worked.
-            if(!sym_addr){
-                log_error_message("Failed to retrieve the breakpoints symbol %s virtual address!", sym_name.c_str());
-                continue;
-            }
-
-            // Check if insertion worked.
-            if(!target->insert_breakpoint(sym_addr, this)){ 
-                log_error_message("Failed to insert the breakpoint at symbol %s!", sym_name.c_str());
-                continue;
-            }
-
-            // Adding breakpoint to active breakpoint vector.
-            m_active_breakpoints.push_back({sym_ptr, sym_name, sym_addr});
-            log_info_message("Breakpoint set to %s with offset %d.", sym_name.c_str(), offset);
-
-            breakpoint_set = true;
+        // If the breakpoint is not already set
+        if(it != m_active_breakpoints.end()){
+            log_info_message("Breakpoint at symbol %s already set!", sym_name.c_str());
         }
 
-        if(!breakpoint_set){
+        // Get the symbol of the eg main from the symbols' list
+        const symbol* sym_ptr = static_cast<vcml::debugging::target*>(target_core)->symbols().find_symbol(sym_name);
+        mwr::u64 sym_addr;
+
+        // Check if symbol exist.
+        if(!sym_ptr){
+            log_error_message("Breakpoints symbol %s not found!", sym_name.c_str());
             return STATUS_ERROR;
         }
+        
+        sym_addr = sym_ptr->virt_addr() + offset;
+        
+        // Check if virt_addr() worked.
+        if(!sym_addr){
+            log_error_message("Failed to retrieve the breakpoints symbol %s virtual address!", sym_name.c_str());
+            return STATUS_ERROR;
+        }
+
+        // Check if insertion worked.
+        if(!static_cast<vcml::debugging::target*>(target_core)->insert_breakpoint(sym_addr, this)){ 
+            log_error_message("Failed to insert the breakpoint at symbol %s!", sym_name.c_str());
+            return STATUS_ERROR;
+        }
+
+        // Adding breakpoint to active breakpoint vector.
+        m_active_breakpoints.push_back({sym_ptr, sym_name, sym_addr});
+        log_info_message("Breakpoint set to %s with offset %d.", sym_name.c_str(), offset);
 
         return STATUS_OK;
     }
@@ -507,8 +498,7 @@ namespace testing{
 
     status avp64_testing_receiver::handle_enable_code_coverage(){
         // Enabling basic block tracking for all targets.
-        for (auto* target : target::all())
-            target->trace_basic_blocks(this);
+        static_cast<vcml::debugging::target*>(target_core)->trace_basic_blocks(this);
         log_info_message("Code coverage enabled.");
         return STATUS_OK;
     }
@@ -520,8 +510,7 @@ namespace testing{
 
     status avp64_testing_receiver::handle_disable_code_coverage(){
         // Disabling basic block tracking for all targets.
-        for (auto* target : target::all())
-            target->untrace_basic_blocks(this);
+        static_cast<vcml::debugging::target*>(target_core)->untrace_basic_blocks(this);
         log_info_message("Code coverage disabled.");
         return STATUS_OK;
     }
@@ -620,7 +609,13 @@ namespace testing{
             }
             m_run_until_breakpoint = true;
 
-            // Continues the executio to the start breakpoint where the next run can be started.
+            
+            // Continues the execution to the start breakpoint where the next run can be started.
+            log_info_message("Jumping to start address %d.", m_run_until_breakpoint_addr);
+            bool jump_success = target_core->jump_to(m_run_until_breakpoint_addr);
+            log_info_message("Jumping successfull: %d.", jump_success);
+
+            // Continues the execution to the start breakpoint where the next run can be started.
             log_info_message("Continuing until start breakpoint.");
             handle_continue(last_event);
 
@@ -670,22 +665,20 @@ namespace testing{
     }
 
     bool avp64_testing_receiver::read_reg_value(uint64_t &read_val, string &reg_name){
-        // Reading cpu register of targets. Multiple target are not directly supported yet. Therefore the value gets overwritten if there are multiple targets!
-        for (auto* target : target::all()){
-            const cpureg *reg = target->find_cpureg(reg_name);
+        // Reading cpu register of the target core.
+        const cpureg *reg = target_core->find_cpureg(reg_name);
 
-            if(!reg){
-                log_info_message("The register with the name %s was not found!", reg_name.c_str());
-                return false;
-            }
-
-            if(reg->size > 8){
-                log_error_message("The requested register is larger thatn 8 bytes, not supported!");
-                return false;
-            }
-            reg->read(&read_val, reg->size);
+        if(!reg){
+            log_info_message("The register with the name %s was not found!", reg_name.c_str());
+            return false;
         }
 
+        if(reg->size > 8){
+            log_error_message("The requested register is larger thatn 8 bytes, not supported!");
+            return false;
+        }
+        reg->read(&read_val, reg->size);
+        
         return true;
     }
 };

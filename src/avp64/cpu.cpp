@@ -133,6 +133,11 @@ vcml::u64 cpu::cycle_count() const {
     return total_insn;
 }
 
+avp64::core* cpu::get_core(size_t index){
+    if(index >= m_cores.size()) return nullptr;
+    return m_cores.at(index).get();
+}
+
 const char* cpu::version() const {
     return AVP64_VERSION_STRING;
 }

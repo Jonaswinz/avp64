@@ -168,7 +168,7 @@ system::system(const sc_core::sc_module_name& nm):
     m_canbridge("canbridge"),
     m_cpu("cpu"),
     m_mmio_probe("probe"),
-    m_testing_receiver("testing_receiver", this->m_mmio_probe) {
+    m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)) {
         construct_system_arm64();
 
         // Setting notify_mmio_access callback.

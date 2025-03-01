@@ -72,6 +72,8 @@ public:
 
     virtual const char* version() const override;
 
+    avp64::core* get_core(size_t index);
+
 protected:
     virtual void end_of_elaboration() override;
     virtual void before_end_of_elaboration() override;

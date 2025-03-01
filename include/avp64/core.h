@@ -85,6 +85,9 @@ private:
     std::unordered_set<vcml::u64> m_update_mem;
     std::list<std::pair<int, std::shared_ptr<void>>> m_syscalls;
 
+    bool jump_requested = false;
+    vcml::u64 jump_addr;
+
     void timer_irq_trigger(int timer_id);
     static void segfault_handler(int sig, siginfo_t* si, void* unused);
     void load_symbols();
@@ -157,6 +160,8 @@ public:
     void handle_syscall(int callno, std::shared_ptr<void> arg);
     void add_syscall_subscriber(const std::shared_ptr<core>& cpu);
     vcml::u64 get_page_size();
+
+    bool jump_to(vcml::u64 address);
 
     core() = delete;
     core(const core&) = delete;

@@ -126,7 +126,7 @@ namespace testing {
                     if(tx.get_data_length() <= queue_available){
                     
                         vcml::log_info("Reading from %d read queue %d characters.", (int)tx.get_address(), (int)tx.get_data_length());
-                        vcml::log_info("Value: %s", it->second.data+it->second.data_index);
+                        //vcml::log_info("Value: %s", it->second.data+it->second.data_index);
 
                         memcpy(tx.get_data_ptr(), it->second.data+it->second.data_index, tx.get_data_length());
                         it->second.data_index += tx.get_data_length();
@@ -137,7 +137,7 @@ namespace testing {
                     }else{
 
                         vcml::log_info("Reading from %d read queue only %d characters (%d required).", (int)tx.get_address(), (int)queue_available, (int)tx.get_data_length());
-                        vcml::log_info("Value: %s", it->second.data+it->second.data_index);
+                        //vcml::log_info("Value: %s", it->second.data+it->second.data_index);
 
                         memcpy(tx.get_data_ptr(), it->second.data+it->second.data_index, queue_available);
                         it->second.data_index += queue_available;
