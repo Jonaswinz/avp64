@@ -16,10 +16,13 @@ option(AVP64_BUILD_RUNNER "Build avp64 runner" ON)
 set(AVP64_LINTER "" CACHE STRING "Code linter to use")
 
 include(cmake/common.cmake)
-find_github_repo(vcml "machineware-gmbh/vcml")
+find_github_repo(vcml "jonaswinz/vcml")
 
 set(OCX_QEMU_ARM_BUILD_TESTS OFF CACHE BOOL "disable ocx tests")
 find_github_repo(ocx-qemu-arm "snps-virtualprototyping/ocx-qemu-arm")
+
+set(VP_TESTING_INTERFACE_TAG "v0.2" CACHE STRING "Tag of vp-testing-interface")
+find_github_repo(vp-testing-interface "jonaswinz/vp-testing-interface")
 
 set(src "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(inc "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -31,6 +34,8 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
+    ${src}/testing/avp64_testing_receiver.cpp
+    ${src}/testing/mmio_probe.cpp
 )
 
 add_library(avp64 STATIC ${sources})
@@ -41,6 +46,7 @@ target_include_directories(avp64 PUBLIC ${gen})
 target_include_directories(avp64 PUBLIC ${OCX_QEMU_ARM_HOME}/ocx/include)
 target_link_libraries(avp64 PUBLIC ${CMAKE_DL_LIBS})
 target_link_libraries(avp64 PUBLIC vcml)
+target_link_libraries(avp64 PUBLIC vp-testing-interface)
 set_target_properties(avp64 PROPERTIES CXX_STANDARD 17)
 set_target_properties(avp64 PROPERTIES CXX_CLANG_TIDY "${AVP64_LINTER}")
 set_target_properties(avp64 PROPERTIES VERSION "${AVP64_VERSION}")
@@ -80,6 +86,7 @@ if(AVP64_BUILD_RUNNER)
     set_target_properties(avp64-runner PROPERTIES SOVERSION "${AVP64_VERSION_MAJOR}")
     target_link_whole_archives(avp64-runner avp64)
     target_link_whole_archives(avp64-runner vcml)
+    target_link_whole_archives(avp64-runner vp-testing-interface)
 
     if(NOT ${AVP64_LINTER} STREQUAL "")
         # -std=c++17 is not passed to the compiler if it is the comiler's default
