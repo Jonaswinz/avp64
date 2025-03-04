@@ -21,7 +21,8 @@
      clk_bind(m_clock_cpu, "clk", m_stm32_peripherals, "clk");
      clk_bind(m_clock_cpu, "clk", m_stm32_system_control, "clk");
      clk_bind(m_clock_cpu, "clk", m_stm32_gpio, "clk");
-     clk_bind(m_clock_cpu, "clk", m_stm32_uart, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_uart1, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_uart2, "clk");
  
      // Reset Bindings
      gpio_bind(m_reset, "rst", m_cpu, "rst");
@@ -31,7 +32,8 @@
      gpio_bind(m_reset, "rst", m_stm32_peripherals, "rst");
      gpio_bind(m_reset, "rst", m_stm32_system_control, "rst");
      gpio_bind(m_reset, "rst", m_stm32_gpio, "rst");
-     gpio_bind(m_reset, "rst", m_stm32_uart, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_uart1, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_uart2, "rst");
  
      //Fuzzer:
      tlm_bind(m_cpu,"bus",m_mmio_probe, "probe_in");
@@ -44,7 +46,8 @@
      tlm_bind(m_bus, m_stm32_peripherals, "in", { 0x40020000, 0x4002ffff });
      tlm_bind(m_bus, m_stm32_system_control, "in", { 0xE0000000, 0xEfffffff });
      tlm_bind(m_bus, m_stm32_gpio, "in", { 0x48000000, 0x48ffffff });
-     tlm_bind(m_bus, m_stm32_uart, "in", { 0x40013800, 0x400138ff });
+     tlm_bind(m_bus, m_stm32_uart1, "in", { 0x40013800, 0x400138ff });
+     tlm_bind(m_bus, m_stm32_uart2, "in", { 0x40004400, 0x400044ff });
  }
  
  system::system(const sc_core::sc_module_name& nm):
@@ -59,7 +62,8 @@
      m_stm32_peripherals("stm32_peripherals"),
      m_stm32_system_control("stm32_system_control"),
      m_stm32_gpio("stm32_gpio"),
-     m_stm32_uart("stm32_uart"),
+     m_stm32_uart1("stm32_uart1"),
+     m_stm32_uart2("stm32_uart2"),
      m_cpu("cpu"),
      m_mmio_probe("probe"),
      m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)){

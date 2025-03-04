@@ -50,7 +50,8 @@
      stm32_peripherals m_stm32_peripherals;
      stm32_system_control m_stm32_system_control;
      stm32_gpio m_stm32_gpio;
-     stm32_uart m_stm32_uart;
+     stm32_uart m_stm32_uart1;
+     stm32_uart m_stm32_uart2;
  
      cpu m_cpu;
 

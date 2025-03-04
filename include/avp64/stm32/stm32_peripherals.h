@@ -17,16 +17,17 @@
  class stm32_peripherals : public peripheral
  {
 private:
-    void write_rcc_cfgr(u32 val);
+    void write_rcc_cfgr1(u32 val);
 
  public:
  
     reg<u32> flash_acr; // Flash Control Register
     reg<u32> rcc_apb1enr; // APB1 Peripheral Clock Enable Register
     reg<u32> rcc_apb2enr; // APB2 Peripheral Clock Enable Register
-    reg<u32> rcc_cfgr; // Clock Configuration Register
+    reg<u32> rcc_cfgr1; // Clock Configuration Register 1
     reg<u32> rcc_cfgr2; // Clock Configuration Register 2
     reg<u32> rcc_cfgr3; // Clock Configuration Register 3
+    reg<u32> rcc_cfgr4; // Clock Configuration Register 4
     reg<u32> rcc_cr; // Clock Control Register
     reg<u32> rcc_bdcr; // Clock Backup Domain Control Register
     reg<u32> rcc_ahbenr; // AHB Peripheral Clock Enable Register
