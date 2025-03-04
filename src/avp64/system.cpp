@@ -12,178 +12,72 @@
  
  namespace avp64 {
  
- void system::construct_system_arm32() {
-     clk_bind(m_clock_cpu, "clk", m_bus, "clk");
-     clk_bind(m_clock_cpu, "clk", m_ram, "clk");
-     clk_bind(m_clock_cpu, "clk", m_uart0, "clk");
-     clk_bind(m_clock_cpu, "clk", m_uart1, "clk");
-     clk_bind(m_clock_cpu, "clk", m_uart2, "clk");
-     clk_bind(m_clock_cpu, "clk", m_uart3, "clk");
-     clk_bind(m_clock_cpu, "clk", m_lan0, "clk");
-     clk_bind(m_clock_cpu, "clk", m_sdhci, "clk");
-     clk_bind(m_clock_cpu, "clk", m_sdcard, "clk");
-     clk_bind(m_clock_cpu, "clk", m_simdev, "clk");
-     clk_bind(m_clock_cpu, "clk", m_hwrng, "clk");
-     clk_bind(m_clock_cpu, "clk", m_spi, "clk");
-     clk_bind(m_clock_cpu, "clk", m_gpio, "clk");
-     clk_bind(m_clock_cpu, "clk", m_rtc, "clk");
+ void system::construct_system_avp32() {
+     // Clock Bindings
      clk_bind(m_clock_cpu, "clk", m_cpu, "clk");
-     clk_bind(m_clock_cpu, "clk", m_can, "clk");
-     clk_bind(m_clock_cpu, "clk", m_can_msgram, "clk");
+     clk_bind(m_clock_cpu, "clk", m_bus, "clk");
+     clk_bind(m_clock_cpu, "clk", m_flash, "clk");
+     clk_bind(m_clock_cpu, "clk", m_ram, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_peripherals, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_system_control, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_gpio, "clk");
+     clk_bind(m_clock_cpu, "clk", m_stm32_uart, "clk");
  
-     gpio_bind(m_reset, "rst", m_bus, "rst");
-     gpio_bind(m_reset, "rst", m_ram, "rst");
-     gpio_bind(m_reset, "rst", m_uart0, "rst");
-     gpio_bind(m_reset, "rst", m_uart1, "rst");
-     gpio_bind(m_reset, "rst", m_uart2, "rst");
-     gpio_bind(m_reset, "rst", m_uart3, "rst");
-     gpio_bind(m_reset, "rst", m_lan0, "rst");
-     gpio_bind(m_reset, "rst", m_sdhci, "rst");
-     gpio_bind(m_reset, "rst", m_sdcard, "rst");
-     gpio_bind(m_reset, "rst", m_simdev, "rst");
-     gpio_bind(m_reset, "rst", m_hwrng, "rst");
-     gpio_bind(m_reset, "rst", m_spi, "rst");
-     gpio_bind(m_reset, "rst", m_gpio, "rst");
-     gpio_bind(m_reset, "rst", m_rtc, "rst");
+     // Reset Bindings
      gpio_bind(m_reset, "rst", m_cpu, "rst");
-     gpio_bind(m_reset, "rst", m_can, "rst");
-     gpio_bind(m_reset, "rst", m_can_msgram, "rst");
- 
-     //tlm_bind(m_bus, m_cpu, "bus");
+     gpio_bind(m_reset, "rst", m_bus, "rst");
+     gpio_bind(m_reset, "rst", m_flash, "rst");
+     gpio_bind(m_reset, "rst", m_ram, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_peripherals, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_system_control, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_gpio, "rst");
+     gpio_bind(m_reset, "rst", m_stm32_uart, "rst");
  
      //Fuzzer:
      tlm_bind(m_cpu,"bus",m_mmio_probe, "probe_in");
      tlm_bind(m_bus, m_mmio_probe, "probe_out");
- 
- 
+
+     // TLM Bindings
+     //tlm_bind(m_bus, m_cpu, "bus");
+     tlm_bind(m_bus, m_flash, "in", addr_flash);
      tlm_bind(m_bus, m_ram, "in", addr_ram);
-     tlm_bind(m_bus, m_uart0, "in", addr_uart0);
-     tlm_bind(m_bus, m_uart1, "in", addr_uart1);
-     tlm_bind(m_bus, m_uart2, "in", addr_uart2);
-     tlm_bind(m_bus, m_uart3, "in", addr_uart3);
-     tlm_bind(m_bus, m_lan0, "in", addr_lan0);
-     tlm_bind(m_bus, m_sdhci, "in", addr_sdhci);
-     tlm_bind(m_bus, m_sdhci, "out");
-     tlm_bind(m_bus, m_simdev, "in", addr_simdev);
-     tlm_bind(m_bus, m_hwrng, "in", addr_hwrng);
-     tlm_bind(m_bus, m_spi, "in", addr_spi);
-     tlm_bind(m_bus, m_gpio, "in", addr_gpio);
-     tlm_bind(m_bus, m_rtc, "in", addr_rtc);
-     tlm_bind(m_bus, m_can, "in", addr_can);
-     tlm_bind(m_bus, m_can, "dma");
-     tlm_bind(m_bus, m_can_msgram, "in", addr_can_msgram);
- 
-     // Connect network to eth
-     eth_bind(m_net, "eth_tx", 0, m_lan0, "eth_rx");
-     eth_bind(m_net, "eth_rx", 0, m_lan0, "eth_tx");
-     eth_bind(m_net, "eth_tx", 1, m_bridge, "eth_rx");
-     eth_bind(m_net, "eth_rx", 1, m_bridge, "eth_tx");
- 
-     // Connect terminals to uarts
-     serial_bind(m_term0, "serial_tx", m_uart0, "serial_rx");
-     serial_bind(m_term0, "serial_rx", m_uart0, "serial_tx");
-     serial_bind(m_term1, "serial_tx", m_uart1, "serial_rx");
-     serial_bind(m_term1, "serial_rx", m_uart1, "serial_tx");
-     serial_bind(m_term2, "serial_tx", m_uart2, "serial_rx");
-     serial_bind(m_term2, "serial_rx", m_uart2, "serial_tx");
-     serial_bind(m_term3, "serial_tx", m_uart3, "serial_rx");
-     serial_bind(m_term3, "serial_rx", m_uart3, "serial_tx");
- 
-     // Connect SD card to SDHCI
-     sd_bind(m_sdhci, "sd_out", m_sdcard, "sd_in");
- 
-     // Connect SPI devices to SPI controller
-     spi_bind(m_spi, "spi_out", m_max31855, "spi_in");
-     m_max31855.bind(m_gpio.gpio_out[0],
-                     false); // active low CS forced by Linux kernel
- 
-     // Connect CAN device to CAN controller
-     m_canbus.connect(m_can);
-     m_canbus.connect(m_canbridge);
-     
-     // IRQs
-     gpio_bind(m_uart0, "irq", m_cpu, "spi", irq_uart0);
-     gpio_bind(m_uart1, "irq", m_cpu, "spi", irq_uart1);
-     gpio_bind(m_uart2, "irq", m_cpu, "spi", irq_uart2);
-     gpio_bind(m_uart3, "irq", m_cpu, "spi", irq_uart3);
-     gpio_bind(m_lan0, "irq", m_cpu, "spi", irq_lan0);
-     gpio_bind(m_sdhci, "irq", m_cpu, "spi", irq_sdhci);
-     gpio_bind(m_spi, "irq", m_cpu, "spi", irq_spi);
-     gpio_bind(m_can, "irq0", m_cpu, "spi", irq_can0);
-     gpio_bind(m_can, "irq1", m_cpu, "spi", irq_can1);
+     tlm_bind(m_bus, m_stm32_peripherals, "in", { 0x40020000, 0x4002ffff });
+     tlm_bind(m_bus, m_stm32_system_control, "in", { 0xE0000000, 0xEfffffff });
+     tlm_bind(m_bus, m_stm32_gpio, "in", { 0x48000000, 0x48ffffff });
+     tlm_bind(m_bus, m_stm32_uart, "in", { 0x40013800, 0x400138ff });
  }
  
  system::system(const sc_core::sc_module_name& nm):
      vcml::system(nm),
-     addr_ram("addr_ram", { RAM_LO, RAM_HI }),
-     addr_uart0("addr_uart0", { UART0_LO, UART0_HI }),
-     addr_uart1("addr_uart1", { UART1_LO, UART1_HI }),
-     addr_uart2("addr_uart2", { UART2_LO, UART2_HI }),
-     addr_uart3("addr_uart3", { UART3_LO, UART3_HI }),
-     addr_rtc("addr_rtc", { RTC_LO, RTC_HI }),
-     addr_lan0("addr_lan0", { LAN0_LO, LAN0_HI }),
-     addr_sdhci("addr_sdhci", { SDHCI_LO, SDHCI_HI }),
-     addr_simdev("addr_simdev", { SIMDEV_LO, SIMDEV_HI }),
-     addr_hwrng("addr_hwrng", { HWRNG_LO, HWRNG_HI }),
-     addr_spi("addr_spi", { SPI_LO, SPI_HI }),
-     addr_gpio("addr_gpio", { GPIO_LO, GPIO_HI }),
-     addr_can("addr_can", { CAN_LO, CAN_HI }),
-     addr_can_msgram("addr_can_msgram", { CAN_MSGRAM_LO, CAN_MSGRAM_HI }),
-     irq_uart0("irq_uart0", SPI_UART0),
-     irq_uart1("irq_uart1", SPI_UART1),
-     irq_uart2("irq_uart2", SPI_UART2),
-     irq_uart3("irq_uart3", SPI_UART3),
-     irq_lan0("irq_lan0", SPI_LAN0),
-     irq_sdhci("irq_sdhci", SPI_SDHCI),
-     irq_spi("irq_spi", SPI_SPI),
-     irq_can0("irq_can0", CAN_0),
-     irq_can1("irq_can1", CAN_1),
+     addr_flash("addr_flash"),
+     addr_ram("addr_ram"),
      m_clock_cpu("clock_cpu", 1 * mwr::GHz),
      m_reset("reset"),
-     m_throttle("throttle"),
      m_bus("bus"),
+     m_flash("flash", addr_flash.get().length()),
      m_ram("ram", addr_ram.get().length()),
-     m_uart0("uart0"),
-     m_uart1("uart1"),
-     m_uart2("uart2"),
-     m_uart3("uart3"),
-     m_term0("term0"),
-     m_term1("term1"),
-     m_term2("term2"),
-     m_term3("term3"),
-     m_lan0("lan0"),
-     m_net("net"),
-     m_bridge("bridge"),
-     m_sdcard("sdcard"),
-     m_sdhci("sdhci"),
-     m_simdev("simdev"),
-     m_hwrng("hwrng"),
-     m_spi("spi"),
-     m_gpio("gpio"),
-     m_max31855("max31855"),
-     m_rtc("rtc"),
-     m_canbus("canbus"),
-     m_can_msgram("can_msgram", addr_can_msgram.get().length()),
-     m_can("can", addr_can_msgram.get()),
-     m_canbridge("canbridge"),
+     m_stm32_peripherals("stm32_peripherals"),
+     m_stm32_system_control("stm32_system_control"),
+     m_stm32_gpio("stm32_gpio"),
+     m_stm32_uart("stm32_uart"),
      m_cpu("cpu"),
      m_mmio_probe("probe"),
-     m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)) {
-         construct_system_arm32();
- 
-         // Setting notify_mmio_access callback.
-         m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2);
-     }
- 
+     m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)){
+        construct_system_avp32();
+
+        // Setting notify_mmio_access callback.
+        m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2);
+ }
+
  void system::parse_args(int argc, const char* const* argv){
-     m_testing_receiver.parse_args(argc, argv);
+      m_testing_receiver.parse_args(argc, argv);
  }
  
  int system::run() {
-  
+
      // TODO earlier ?
      m_testing_receiver.init();
- 
+
      double simstart = mwr::timestamp();
      int result = vcml::system::run();
      double realtime = mwr::timestamp() - simstart;
@@ -200,7 +94,7 @@
                     realtime == 0.0 ? 0.0 : realtime / duration);
  
      m_testing_receiver.notify_vp_finished();
- 
+
      return result;
  }
  
@@ -217,3 +111,4 @@
  }
  
  } // namespace avp64
+ 

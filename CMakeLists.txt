@@ -34,6 +34,10 @@ configure_file(${src}/avp64/version.h.in
 set(sources
     ${src}/avp64/core.cpp
     ${src}/avp64/cpu.cpp
+    ${src}/avp64/stm32/stm32_peripherals.cpp
+    ${src}/avp64/stm32/stm32_system_control.cpp
+    ${src}/avp64/stm32/stm32_gpio.cpp
+    ${src}/avp64/stm32/stm32_uart.cpp
     ${src}/testing/avp64_testing_receiver.cpp
     ${src}/testing/mmio_probe.cpp
 )
