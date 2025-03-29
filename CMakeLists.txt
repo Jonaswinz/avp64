@@ -21,7 +21,7 @@ find_github_repo(vcml "jonaswinz/vcml")
 set(OCX_QEMU_ARM_BUILD_TESTS OFF CACHE BOOL "disable ocx tests")
 find_github_repo(ocx-qemu-arm "snps-virtualprototyping/ocx-qemu-arm")
 
-set(VP_TESTING_INTERFACE_TAG "v0.2" CACHE STRING "Tag of vp-testing-interface")
+set(VP_TESTING_INTERFACE_TAG "v0.3" CACHE STRING "Tag of vp-testing-interface")
 find_github_repo(vp-testing-interface "jonaswinz/vp-testing-interface")
 
 set(src "${CMAKE_CURRENT_SOURCE_DIR}/src")

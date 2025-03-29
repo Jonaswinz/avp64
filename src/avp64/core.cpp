@@ -13,6 +13,8 @@
 #include <sys/mman.h>
 #include <stdexcept>
 
+#include "testing/avp64_testing_receiver.h"
+
 #define CPU_ARCH "aarch64"
 
 namespace avp64 {
@@ -174,6 +176,8 @@ ocx::response core::transport(const ocx::transaction& tx) {
     case tlm::TLM_OK_RESPONSE:
         return ocx::RESP_OK;
     case tlm::TLM_ADDRESS_ERROR_RESPONSE:
+        vcml::log_error("CORE: TLM_ADDRESS_ERROR_RESPONSE");
+        testing::avp64_testing_receiver::notify_VP_ERROR_event();
         return ocx::RESP_ADDRESS_ERROR;
     case tlm::TLM_COMMAND_ERROR_RESPONSE:
         return ocx::RESP_COMMAND_ERROR;
@@ -326,11 +330,27 @@ void core::simulate(size_t cycles) {
     if(jump_requested){
         // Setting the PC to the jump address.
         if(write_reg_dbg(m_core->pc_regid(), &jump_addr, sizeof(jump_addr))){
+            vcml::log_info("CORE: Jumped to %d.", (int)jump_addr);
             jump_requested = false;
         }else{
-            log_error("Jump to %d was not successfull!", (int)jump_addr);
+            vcml::log_error("CORE: Jump to %d was not successfull!", (int)jump_addr);
         }
     }
+
+    if(restore_registers_requested){
+        restore_registers();
+        restore_registers_requested = false;
+    }
+
+    if(interrupt_requested){
+        simulate_interrupt(interrupt_address, interrupt_return_address);
+        interrupt_requested = false;
+    }else if(interrupt_reset_requested){
+        reset_interrupt();
+        interrupt_reset_requested = false;
+    }
+
+    //vcml::log_info("%llu", stack_pointer());
 
     m_run_cycles += m_core->insn_count();
     m_core->step(cycles);
@@ -586,12 +606,195 @@ core::core(const sc_core::sc_module_name& nm, vcml::u64 procid,
         "arm_timer_s");
 }
 
+vcml::u64 core::get_actual_pc(){
+    if(jump_requested) return jump_addr;
+    return program_counter();
+}
+
 bool core::jump_to(vcml::u64 address){
     jump_requested = true;
     jump_addr = address;
 
     return true;
 }
+
+bool core::store_registers_to_array(uint64_t* array, bool include_pc){
+
+    vcml::log_info("CORE: Storing registers ...");
+
+    // X0 - X30
+    for (id_t i = 0; i < 31; ++i)
+        if(!read_reg_dbg(i, &array[i], 8)) return false;
+
+    if(!read_reg_dbg(31, &array[31], 8)) return false;
+    if(include_pc) if(!read_reg_dbg(32, &array[32], 8)) return false;
+
+    // aarch64 status register and bitfields
+    if(!read_reg_dbg(33, &array[33], 4)) return false;
+    if(!read_reg_dbg(50, &array[34], 4)) return false;
+    if(!read_reg_dbg(64, &array[35], 4)) return false;
+    if(!read_reg_dbg(78, &array[36], 4)) return false;
+    if(!read_reg_dbg(92, &array[37], 8)) return false;
+    if(!read_reg_dbg(93, &array[38], 8)) return false;
+    if(!read_reg_dbg(94, &array[39], 8)) return false;
+    if(!read_reg_dbg(95, &array[40], 8)) return false;
+    if(!read_reg_dbg(96, &array[41], 8)) return false;
+    if(!read_reg_dbg(97, &array[42], 8)) return false;
+    if(!read_reg_dbg(98, &array[43], 8)) return false;
+    if(!read_reg_dbg(99, &array[44], 8)) return false;
+
+    // aarch64 floating point registers
+    for (id_t i = 0; i < 32; ++i)
+        if(!read_reg_dbg(i + 449, &array[45+i], 8)) return false;
+
+    // aarch64 floating point status registers
+    if(!read_reg_dbg(192, &array[77], 4)) return false;
+    if(!read_reg_dbg(193, &array[78], 4)) return false;
+
+    vcml::log_info("CORE: Storing registers successfull.");
+
+    return true;
+}
+
+bool core::store_registers(){
+    return store_registers_to_array(saved_registers, false);    
+}
+
+bool core::restore_registers_from_array(uint64_t* array, bool include_pc){
+
+    vcml::log_info("CORE: Restoring registers ...");
+
+    // X0 - X30
+    for (id_t i = 0; i < 31; ++i)
+        if(!write_reg_dbg(i, &array[i], 8)) return false;
+
+    if(!write_reg_dbg(31, &array[31], 8)) return false;
+    if(include_pc) if(!write_reg_dbg(32, &array[32], 8)) return false;
+
+    // aarch64 status register and bitfields
+    if(!write_reg_dbg(33, &array[33], 4)) return false;
+    if(!write_reg_dbg(50, &array[34], 4)) return false;
+    if(!write_reg_dbg(64, &array[35], 4)) return false;
+    if(!write_reg_dbg(78, &array[36], 4)) return false;
+    if(!write_reg_dbg(92, &array[37], 8)) return false;
+    if(!write_reg_dbg(93, &array[38], 8)) return false;
+    if(!write_reg_dbg(94, &array[39], 8)) return false;
+    if(!write_reg_dbg(95, &array[40], 8)) return false;
+    if(!write_reg_dbg(96, &array[41], 8)) return false;
+    if(!write_reg_dbg(97, &array[42], 8)) return false;
+    if(!write_reg_dbg(98, &array[43], 8)) return false;
+    if(!write_reg_dbg(99, &array[44], 8)) return false;
+
+    // aarch64 floating point registers
+    for (id_t i = 0; i < 32; ++i)
+        if(!write_reg_dbg(i + 449, &array[45+i], 8)) return false;
+
+    // aarch64 floating point status registers
+    if(!write_reg_dbg(192, &array[77], 4)) return false;
+    if(!write_reg_dbg(193, &array[78], 4)) return false;
+
+    vcml::log_info("CORE: Restoring registers successfull.");
+
+    return true;
+}
+
+bool core::restore_registers(){
+    return restore_registers_from_array(saved_registers, false);
+}
+
+bool core::reset_interrupt(){
+
+    vcml::log_info("CORE: Resetting last interrupt.");
+
+    restore_registers_from_array(interrupt_return_registers, true);
+
+    vcml::log_info("CORE: Restoring registers successfull.");
+
+    return true;
+}
+
+void core::request_restore_registers(){
+    restore_registers_requested = true;
+}
+
+bool core::set_interrupt_trigger(vcml::u64 isr_address, vcml::u64 trigger_address){
+    // Synchronize access to fixed reads, because it may access by multiple threads (simulation and receiving loop).
+    std::lock_guard<std::mutex> lock(m_interrupt_triggers_mutex);
+
+    vcml::log_info("CORE: Setting interrupt trigger for 0x%016llx to 0x%016llx.", isr_address, trigger_address);
+
+    // Enabeling interrupt checking.
+    m_interrupt_checking_enabled = true;
+
+    auto it = m_interrupt_triggers.find(trigger_address);
+    if (it != m_interrupt_triggers.end()) {
+        // Update if exist.
+        it->second = isr_address;
+    }else{
+        // Add.
+        m_interrupt_triggers[trigger_address] = isr_address;
+    }
+
+    return true;
+}
+
+bool core::check_interrupt(vcml::u64 address){
+
+    if(m_interrupt_checking_enabled){
+
+        // Synchronize access to fixed reads, because it may access by multiple threads (simulation and receiving loop).
+        std::lock_guard<std::mutex> lock(m_interrupt_triggers_mutex);
+
+        auto it = m_interrupt_triggers.find(address);
+        if (it != m_interrupt_triggers.end()) {
+
+            interrupt_address = it->second;
+            interrupt_return_address = it->first;
+
+            if(inside_interrupt){
+                inside_interrupt = false;
+                interrupt_reset_requested = true;
+            }else{
+                inside_interrupt = true;
+                interrupt_requested = true;
+            }
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool core::simulate_interrupt(vcml::u64 isr_address, vcml::u64 return_address) {
+
+    vcml::log_info("CORE: Triggering interrupt 0x%016llx", isr_address);
+
+    // Storing registers before interrupt.
+    store_registers_to_array(interrupt_return_registers, true); 
+    
+    // Save to ELR_EL1 (exception link register)
+    if (!write_reg_dbg(97, &return_address, sizeof(return_address))) {
+        vcml::log_error("Failed to set ELR_EL1");
+        return false;
+    }
+
+    // Set SPSR_EL1 to a known state (e.g., to return to EL0)
+    vcml::u64 spsr = (0b0000 << 2) | (1 << 6) | (1 << 7) | (1 << 8); // Return to EL0t in AArch64. Disabled FIQ, IRQ, SError.
+    if (!write_reg_dbg(50, &spsr, sizeof(spsr))) {
+        vcml::log_error("Failed to set SPSR_EL1");
+        return false;
+    }
+
+    // Now set PC to ISR
+    if (!write_reg_dbg(m_core->pc_regid(), &isr_address, sizeof(isr_address))) {
+        vcml::log_error("Failed to jump to ISR");
+        return false;
+    }
+
+    return true;
+}
+
 
 core::~core() {
     dlclose(m_ocx_handle);

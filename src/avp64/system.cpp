@@ -172,7 +172,7 @@ system::system(const sc_core::sc_module_name& nm):
         construct_system_arm64();
 
         // Setting notify_mmio_access callback.
-        m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2);
+        m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
     }
 
 void system::parse_args(int argc, const char* const* argv){
