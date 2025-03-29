@@ -1,4 +1,5 @@
 BUILD/
+install
 .settings/
 .cproject
 .project

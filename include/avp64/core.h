@@ -88,6 +88,21 @@ private:
     bool jump_requested = false;
     vcml::u64 jump_addr;
 
+    bool inside_interrupt = false;
+    bool interrupt_requested = false;
+    bool interrupt_reset_requested = false;
+    vcml::u64 interrupt_address;
+    vcml::u64 interrupt_return_address;
+    uint64_t interrupt_return_registers[79] = {0};
+
+    // 17 registers minus the PC.
+    uint64_t saved_registers[79] = {0};
+    bool restore_registers_requested = false;
+
+    bool m_interrupt_checking_enabled = false;
+    std::unordered_map<vcml::u64, vcml::u64> m_interrupt_triggers;
+    std::mutex m_interrupt_triggers_mutex;
+
     void timer_irq_trigger(int timer_id);
     static void segfault_handler(int sig, siginfo_t* si, void* unused);
     void load_symbols();
@@ -111,6 +126,9 @@ protected:
 
     virtual bool start_basic_block_trace() override;
     virtual bool stop_basic_block_trace() override;
+
+    bool store_registers_to_array(uint64_t* array, bool include_pc);
+    bool restore_registers_from_array(uint64_t* array, bool include_pc);
 
 public:
     using vcml::component::transport; // needed to not hide vcml transport
@@ -160,8 +178,15 @@ public:
     void handle_syscall(int callno, std::shared_ptr<void> arg);
     void add_syscall_subscriber(const std::shared_ptr<core>& cpu);
     vcml::u64 get_page_size();
-
+    
+    vcml::u64 get_actual_pc();
     bool jump_to(vcml::u64 address);
+    bool store_registers();
+    bool restore_registers();
+    void request_restore_registers();
+
+    bool set_interrupt_trigger(vcml::u64 isr_address, vcml::u64 trigger_address);
+    bool check_interrupt(vcml::u64 address);
 
     core() = delete;
     core(const core&) = delete;
@@ -169,6 +194,9 @@ public:
                   vcml::u64 coreid);
     virtual ~core() override;
     virtual const char* kind() const override { return "avp64::core"; }
+
+    bool simulate_interrupt(vcml::u64 isr_address, vcml::u64 return_address);
+    bool reset_interrupt();
 };
 
 } // namespace avp64
