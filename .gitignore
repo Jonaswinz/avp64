@@ -1,5 +1,5 @@
 BUILD/
-install
+/install/
 .settings/
 .cproject
 .project

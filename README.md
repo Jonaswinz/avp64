@@ -1,3 +1,11 @@
+> [!NOTE]  
+> This fork of [AVP64](https://github.com/aut0/avp64) integrates the [VP-Testing-Interface](https://github.com/Jonaswinz/vp-testing-interface) to allow automated testing. More information can be found [here](/README_testing.md).
+>
+> This repository also includes variants of AVP64: <br/>
+> [AVP32](https://github.com/Jonaswinz/avp64/tree/avp32): 32-bit version using an ARM Cortex-M0. <br/>
+> [AVP32-STM32F0](https://github.com/Jonaswinz/avp64/tree/avp32-STM32F0): Virtual prototype of a STM32F0 (not fully modeled).
+
+
 # An ARMv8 Virtual Platform (AVP64)
 
 [![cmake](https://github.com/aut0/avp64/actions/workflows/cmake.yml/badge.svg?event=push)](https://github.com/aut0/avp64/actions/workflows/cmake.yml)
