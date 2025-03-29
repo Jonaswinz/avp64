@@ -724,6 +724,8 @@ namespace testing{
 
     status avp64_testing_receiver::handle_set_error_symbol(std::string &symbol){
 
+        log_info_message("Setting error symbol to %s.", symbol.c_str());
+
         if(find_symbol_address(&error_symbol_address, symbol, true)){
             return STATUS_OK;
         }else{

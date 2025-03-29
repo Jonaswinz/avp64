@@ -121,6 +121,8 @@ namespace testing {
         VCML_ERROR_ON(tx.get_data_length() == 0, "Transaction data length cannot be zero");
         VCML_ERROR_ON(tx.get_response_status() != vcml::TLM_INCOMPLETE_RESPONSE, "Invalid in-bound transaction response status");
 
+        //vcml::log_info("MMIO_PROBE: MMIO event for address 0x%016llx and length %d (%d)", (unsigned long long)tx.get_address(), (int)tx.get_data_length(), (int)tx.get_command());
+
         // Array indicating which bytes of the request are filled.
         bool byte_set[tx.get_data_length()] = {false};
 
@@ -131,8 +133,8 @@ namespace testing {
 
             // Writing fixed read values to data if fit.
             for (auto it = m_fixed_reads.begin(); it != m_fixed_reads.end(); ++it) {
-                if(it->first >= tx.get_address() && it->first <= tx.get_address()+tx.get_data_length()){
-                    vcml::log_info("MMIO_PROBE: Using fixed read for %lu with value %02X.", it->first, it->second.data);
+                if(it->first >= tx.get_address() && it->first < tx.get_address()+tx.get_data_length()){
+                    vcml::log_info("MMIO_PROBE: Using fixed read for 0x%016lx with value %02X.", it->first, it->second.data);
 
                     // Wiring the byte to the request data by its offset.
                     uint64_t offset = it->first-tx.get_address();
@@ -143,8 +145,6 @@ namespace testing {
                 }
             }
         }
-
-        //vcml::log_info("MMIO_PROBE: MMIO event for address 0x%016llx and length %d (%d)", (unsigned long long)tx.get_address(), (int)tx.get_data_length(), (int)tx.get_command());
 
         // If we're tracking the accesses we're not forwarding the payload to the system bus
         // The address must be inside the range defined tracking range and the mode must match the command of the transfer.
@@ -174,7 +174,7 @@ namespace testing {
                             // If the request is shorter than the fill_length adjust it.
                             if(offset+fill_length > tx.get_data_length()) fill_length = tx.get_data_length()-offset;
 
-                            vcml::log_info("MMIO_PROBE: Reading from %d read queue %lu characters.", (int)tx.get_address(), fill_length);
+                            vcml::log_info("MMIO_PROBE: Reading from 0x%016llx read queue %lu characters.", tx.get_address(), fill_length);
                             vcml::log_info("MMIO_PROBE: Value: %s", it->second.data+it->second.data_index);
                             
                             // Copy data and update queue index.
