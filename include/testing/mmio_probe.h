@@ -19,9 +19,14 @@ namespace testing{
 
             // Represents a MMIO read queue.
             struct read_queue{
-                uint64_t data_length;
-                uint64_t data_index;
+                size_t length;
+                size_t data_length;
+                size_t data_index;
                 char* data;
+            };
+
+            struct fixed_read{
+                char data;
             };
 
             // In and output socket of this VCML component.
@@ -41,16 +46,19 @@ namespace testing{
             void disable_tracking();
 
             // Variable for the callback when an MMIO access needs to be handeled. Should be set to the testing_receiver.
-            std::function<void(vcml::tlm_generic_payload& tx, size_t offset)> notify_mmio_access = NULL;
+            std::function<void(tlm::tlm_command cmd, unsigned char* ptr, uint64_t mmio_addr, unsigned int length)> notify_mmio_access = NULL;
 
             // Sets a new MMIO read queue.
-            void set_read_queue(uint64_t address, size_t length, char* data);
+            void set_read_queue(uint64_t address, size_t length, size_t data_length, char* data);
 
             // Adds to an existing MMIO read queue.
-            void add_to_read_queue(uint64_t address, size_t length, char* data);
+            void add_to_read_queue(uint64_t address, size_t length, size_t data_length, char* data);
 
             // Deletes and existing MMIO read queue.
             void delete_read_queue(uint64_t address);
+
+            // Adds a fixed read entry.
+            void set_fixed_read(uint64_t address, char data);
 
         protected:
 
@@ -77,6 +85,10 @@ namespace testing{
             // Management of the different read queues.
             std::unordered_map<uint64_t, read_queue> m_read_queues;
             std::mutex m_read_queues_mutex;
+
+            // Management of fixed reads.
+            std::unordered_map<uint64_t, fixed_read> m_fixed_reads;
+            std::mutex m_fixed_reads_mutex;
     };
 
 } //namespace testing

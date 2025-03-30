@@ -9,6 +9,8 @@ stm32_system_control::stm32_system_control(const sc_module_name& nm):
     nvic_iser0("nvic_iser0", 0xe100, 0x00000000), // 0xE000E100
     nvic_iser5("nvic_iser5", 0xe41c, 0x00000000), // 0xE000E41C
     nvic_iser6("nvic_iser6", 0xe180, 0x00000000), // 0xE000E180
+    nvic_ispr0("nvic_ispr0", 0xe200, 0x00000000), // 0xE000E200
+    nvic_icpr0("nvic_icpr0", 0xe280, 0x00000000), // 0xE000E280
     in("in"){} 
 
 stm32_system_control::~stm32_system_control() {

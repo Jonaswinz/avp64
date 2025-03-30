@@ -25,6 +25,8 @@ public:
     reg<u32> nvic_iser0; // Interrupt Set-Enable Register 0
     reg<u32> nvic_iser5; // Interrupt Set-Enable Register 5
     reg<u32> nvic_iser6; // Interrupt Set-Enable Register 6
+    reg<u32> nvic_ispr0; // Interrupt Set-Pending Register 0
+    reg<u32> nvic_icpr0; // Interrupt CLear Pending Register 0
 
     tlm_target_socket in;
 

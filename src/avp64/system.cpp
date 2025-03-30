@@ -66,13 +66,13 @@
      m_stm32_uart2("stm32_uart2"),
      m_cpu("cpu"),
      m_mmio_probe("probe"),
-     m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)){
+     m_testing_receiver("testing_receiver", this->m_mmio_probe, m_cpu.get_core(0)) {
         construct_system_avp32();
-
-        // Setting notify_mmio_access callback.
-        m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2);
- }
-
+ 
+         // Setting notify_mmio_access callback.
+         m_mmio_probe.notify_mmio_access = std::bind(&testing::avp64_testing_receiver::on_mmio_access, &m_testing_receiver, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+     }
+ 
  void system::parse_args(int argc, const char* const* argv){
       m_testing_receiver.parse_args(argc, argv);
  }
@@ -115,4 +115,3 @@
  }
  
  } // namespace avp64
- 

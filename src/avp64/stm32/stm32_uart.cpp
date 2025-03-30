@@ -2,7 +2,7 @@
 
 stm32_uart::stm32_uart(const sc_module_name& nm):
     peripheral(nm),
-    cr1("cr1", 0x0, 0x00000000),
+    cr1("cr1", 0x0, 0x00000020),
     cr2("cr2", 0x4, 0x00000000),
     cr3("cr3", 0x8, 0x00000000),
     cr4("cr4", 0xc, 0x00000000),
