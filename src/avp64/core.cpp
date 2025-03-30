@@ -712,12 +712,7 @@ bool core::simulate_interrupt(vcml::u64 isr_address, vcml::u64 return_address) {
     vcml::log_info("CORE: Triggering interrupt 0x%016llx", isr_address);
 
     // Storing registers before interrupt.
-    for (id_t i = 0; i < 13; ++i)
-        if(!read_reg_dbg(i, &interrupt_return_registers[i], 4)) return false;
-    if(!read_reg_dbg(13, &interrupt_return_registers[13], 4)) return false;
-    if(!read_reg_dbg(14, &interrupt_return_registers[14], 4)) return false;
-    if(!read_reg_dbg(15, &interrupt_return_registers[15], 4)) return false;
-    if(!read_reg_dbg(16, &interrupt_return_registers[16], 4)) return false;
+    store_registers_to_array(interrupt_return_registers, true);
 
     // Get current PC and SP
     vcml::u32 return_address_u32 = static_cast<vcml::u32>(return_address);
@@ -755,8 +750,10 @@ bool core::simulate_interrupt(vcml::u64 isr_address, vcml::u64 return_address) {
         return false;
     }
 
+    vcml::u32 isr_address_u32 = static_cast<vcml::u32>(isr_address);
+
     // Jump to ISR
-    if (!write_reg_dbg(m_core->pc_regid(), &isr_address, sizeof(isr_address))) {
+    if (!write_reg_dbg(m_core->pc_regid(), &isr_address_u32, sizeof(isr_address_u32))) {
         vcml::log_error("CORE: Failed to set PC to ISR");
         return false;
     }
