@@ -330,10 +330,10 @@ void core::simulate(size_t cycles) {
     if(jump_requested){
         // Setting the PC to the jump address.
         if(write_reg_dbg(m_core->pc_regid(), &jump_addr, sizeof(jump_addr))){
-            vcml::log_info("CORE: Jumped to %d.", (int)jump_addr);
+            vcml::log_info("CORE: Jumped to 0x%016llx.", jump_addr);
             jump_requested = false;
         }else{
-            vcml::log_error("CORE: Jump to %d was not successfull!", (int)jump_addr);
+            vcml::log_error("CORE: Jump to 0x%016llx was not successfull!", jump_addr);
         }
     }
 

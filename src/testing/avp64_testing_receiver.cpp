@@ -357,9 +357,9 @@ namespace testing{
     }
 
     bool avp64_testing_receiver::set_breakpoint_to_address(vcml::u64 addr){
-        log_info_message("Setting breakpoint to address 0x%016llx.", (int)addr);
+        log_info_message("Setting breakpoint to address 0x%016llx.", addr);
         if(!static_cast<vcml::debugging::target*>(target_core)->insert_breakpoint(addr, this)){
-            log_error_message("Failed to insert the breakpoint!", addr);
+            log_error_message("Failed to insert the breakpoint at address 0x%016llx!", addr);
             return false;
         }
 
@@ -367,9 +367,9 @@ namespace testing{
     }
 
     bool avp64_testing_receiver::remove_breakpoint_from_address(vcml::u64 addr){
-        log_info_message("Removing breakpoint from address %d.", (int)addr);
+        log_info_message("Removing breakpoint from address 0x%016llx.", addr);
         if(!static_cast<vcml::debugging::target*>(target_core)->remove_breakpoint(addr, this)){
-            log_error_message("Failed to remove the breakpoint at address %d!", addr);
+            log_error_message("Failed to remove the breakpoint at address 0x%016llx!", addr);
             return false;
         }
 
@@ -756,7 +756,7 @@ namespace testing{
             return STATUS_ERROR;
         }
 
-        target_core->jump_to((uint32_t)address);
+        target_core->jump_to(address);
         return STATUS_OK;
     }
 
