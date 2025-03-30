@@ -40,8 +40,10 @@ namespace testing{
             // Represents a mmio event.
             struct mmio_event{
                 sem_t* mutex;
-                vcml::tlm_generic_payload* payload;
-                size_t offset = 0;
+                tlm::tlm_command cmd;
+                unsigned char* ptr;
+                uint64_t mmio_addr;
+                unsigned int length;
             };
 
             // Constructs the testing_receiver for AVP64 with a SystemC name, a reference to the mmio_probe, and to the target core that should be watched / interacted with.
@@ -69,7 +71,7 @@ namespace testing{
             void notify_basic_block(target& tgt, mwr::u64 pc, size_t blksz, size_t icount) override;
 
             // Callback for the mmio_probe to call when a MMIO access should be handeled.
-            void on_mmio_access(vcml::tlm_generic_payload& tx, size_t offset);
+            void on_mmio_access(tlm::tlm_command cmd, unsigned char* ptr, uint64_t mmio_addr, unsigned int length);
 
             // Callback, when the target programs finished its execution.
             void notify_vp_finished();
@@ -84,6 +86,12 @@ namespace testing{
 
             // Find the address of a symbol by its name. This function can also set a breakpoint to it, without the management via the m_active_breakpoint vector. This is for example used by the run_until mode.
             bool find_symbol_address(vcml::u64* addr, string &breakpoint_name, bool set_breakpoint);
+
+            // Setting breakpoint at address.
+            bool set_breakpoint_to_address(vcml::u64 addr);
+
+            // Removing breakpoint from address.
+            bool remove_breakpoint_from_address(vcml::u64 addr);
 
             // Find a breakpoint inside the m_active_breakpoints vector by its name.
             std::vector<breakpoint>::iterator find_breakpoint(string name);
@@ -110,10 +118,10 @@ namespace testing{
             status handle_set_mmio_value(size_t length, char* value) override;
 
             // Implementation of the ADD_TO_READ_QUEUE command.
-            status handle_add_to_mmio_read_queue(uint64_t address, size_t length, char* value) override;
+            status handle_add_to_mmio_read_queue(uint64_t address, size_t length, size_t data_length, char* data) override;
 
-            // Implementation of the TRIGGER_CPU_INTERRUPT command.
-            status handle_trigger_cpu_interrupt(uint8_t interrupt) override;
+            // Implementation of the SET_CPU_INTERRUPT_TRIGGER command.
+            status handle_set_cpu_interrupt_trigger(uint64_t interrupt_address, uint64_t trigger_address) override;
 
             // Implementation of the ENABLE_CODE_COVERAGE command.
             status handle_enable_code_coverage() override;
@@ -134,7 +142,25 @@ namespace testing{
             status handle_get_return_code(uint64_t &code) override;
 
             // Implementation of the DO_RUN command.
-            status handle_do_run(std::string &start_breakpoint, std::string &end_breakpoint, uint64_t mmio_address, size_t mmio_length, char* mmio_value, std::string &register_name) override;
+            status handle_do_run(std::string &start_breakpoint, std::string &end_breakpoint, uint64_t mmio_address, size_t mmio_length, size_t mmio_data_length, char* mmio_data, std::string &register_name) override;
+
+            // Implementation of the SET_ERROR_SYMBOL command.
+            status handle_set_error_symbol(std::string &symbol) override;
+
+            // Implementation of the SET_FIXED_READ command.
+            status handle_set_fixed_read(size_t count, char* data) override;
+
+            // Implementation of the GET_CPU_PC command.
+            status handle_get_cpu_pc(uint64_t &pc) override;
+
+            // Implementation of the JUMP_CPU_TO command.
+            status handle_jump_cpu_to(uint64_t address) override;
+
+            // Implementation of the STORE_CPU_REGISTER command.
+            status handle_store_cpu_register() override;
+
+            // Implementation of the RESTORE_CPU_REGISTER command
+            status handle_restore_cpu_register() override;
 
             // Stopping the whole VP, when error occured or killing non gracefully.
             void shutdown();
@@ -195,6 +221,12 @@ namespace testing{
             mwr::option<string> m_mq_response_option;
             mwr::option<string> m_pipe_request_option;
             mwr::option<string> m_pipe_response_option;
+
+            // Last start breakpoint information of the do run command.
+            std::string last_start_breakpoint = "";
+            mwr::u64 last_start_breakpoint_addr;
+
+            mwr::u64 error_symbol_address;
     };
 
 }  //namespace testing
