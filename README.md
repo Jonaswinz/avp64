@@ -1,5 +1,5 @@
 > [!NOTE]  
-> This fork of [AVP64](https://github.com/aut0/avp64) integrates the [VP-Testing-Interface](https://github.com/Jonaswinz/vp-testing-interface) to allow automated testing. More information can be found [here](/README_testing.md).
+> This fork of [AVP64](https://github.com/aut0/avp64) integrates the [VP-Testing-Interface](https://github.com/Jonaswinz/vp-testing-interface) to allow automated testing.
 >
 > This repository also includes variants of AVP64: <br/>
 > [AVP32](https://github.com/Jonaswinz/avp64/tree/avp32): 32-bit version using an ARM Cortex-M0. <br/>
